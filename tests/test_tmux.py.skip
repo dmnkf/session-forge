@@ -1,0 +1,110 @@
+"""Tests for Tmux manager functionality."""
+
+import pytest
+from unittest.mock import Mock
+from sf.core.tmux import TmuxManager
+from sf.core.ssh import SshExecutor, CommandResult
+from sf.models import SessionDescriptor
+
+
+@pytest.fixture
+def mock_ssh_executor():
+    """Return a mock SshExecutor."""
+    mock = Mock(spec=SshExecutor)
+    mock.run.return_value = CommandResult(exit_code=0, stdout="", stderr="")
+    return mock
+
+
+@pytest.fixture
+def tmux_manager(mock_ssh_executor):
+    """Return a TmuxManager with mocked SSH."""
+    return TmuxManager(mock_ssh_executor)
+
+
+def test_tmux_manager_init(tmux_manager, mock_ssh_executor):
+    """Test TmuxManager initialization."""
+    assert tmux_manager.ssh == mock_ssh_executor
+
+
+def test_start_session_creates_new(tmux_manager, mock_ssh_executor):
+    """Test start_session creates new tmux session."""
+    session = SessionDescriptor(feature="test", repo="repo", llm="claude")
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(exit_code=1, stdout="", stderr="session not found"),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+    ]
+
+    tmux_manager.start_session(session, "/work/dir", "claude --chat")
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert len(calls) == 2
+    assert "tmux has-session" in calls[0][0][0]
+    assert "tmux new-session" in calls[1][0][0]
+    assert "-d" in calls[1][0][0]
+    assert f"-s {session.name}" in calls[1][0][0]
+    assert "-c /work/dir" in calls[1][0][0]
+    assert "claude --chat" in calls[1][0][0]
+
+
+def test_start_session_skips_existing(tmux_manager, mock_ssh_executor):
+    """Test start_session skips if session already exists."""
+    session = SessionDescriptor(feature="test", repo="repo", llm="claude")
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=0, stdout="", stderr=""
+    )
+
+    tmux_manager.start_session(session, "/work/dir", "claude --chat")
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert len(calls) == 1
+    assert "tmux has-session" in calls[0][0][0]
+
+
+def test_kill_session(tmux_manager, mock_ssh_executor):
+    """Test kill_session terminates tmux session."""
+    session = SessionDescriptor(feature="test", repo="repo", llm="claude")
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=0, stdout="", stderr=""
+    )
+
+    tmux_manager.kill_session(session)
+
+    mock_ssh_executor.run.assert_called_once()
+    call_args = mock_ssh_executor.run.call_args[0][0]
+    assert "tmux kill-session" in call_args
+    assert f"-t {session.name}" in call_args
+
+
+def test_list_sessions(tmux_manager, mock_ssh_executor):
+    """Test list_sessions returns session list."""
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=0,
+        stdout="feat:test:repo:claude\nfeat:another:repo:aider\n",
+        stderr="",
+    )
+
+    sessions = tmux_manager.list_sessions()
+
+    assert len(sessions) == 2
+    assert "feat:test:repo:claude" in sessions
+    assert "feat:another:repo:aider" in sessions
+    mock_ssh_executor.run.assert_called_once()
+    call_args = mock_ssh_executor.run.call_args[0][0]
+    assert "tmux list-sessions" in call_args
+
+
+def test_list_sessions_empty(tmux_manager, mock_ssh_executor):
+    """Test list_sessions handles no sessions gracefully."""
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=1, stdout="", stderr="no server running"
+    )
+
+    sessions = tmux_manager.list_sessions()
+
+    assert sessions == []
+
+
+def test_session_name_format():
+    """Test SessionDescriptor name formatting."""
+    session = SessionDescriptor(feature="payments", repo="core-api", llm="claude")
+    assert session.name == "feat:payments:core-api:claude"

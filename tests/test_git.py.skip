@@ -1,0 +1,157 @@
+"""Tests for Git manager functionality."""
+
+import pytest
+from unittest.mock import Mock, patch
+from sf.core.git import GitManager
+from sf.core.ssh import SshExecutor, CommandResult
+
+
+@pytest.fixture
+def mock_ssh_executor():
+    """Return a mock SshExecutor."""
+    mock = Mock(spec=SshExecutor)
+    mock.run.return_value = CommandResult(exit_code=0, stdout="", stderr="")
+    return mock
+
+
+@pytest.fixture
+def git_manager(mock_ssh_executor):
+    """Return a GitManager with mocked SSH."""
+    return GitManager(mock_ssh_executor)
+
+
+def test_git_manager_init(git_manager, mock_ssh_executor):
+    """Test GitManager initialization."""
+    assert git_manager.ssh == mock_ssh_executor
+
+
+def test_ensure_anchor_creates_new_clone(git_manager, mock_ssh_executor, sample_repo):
+    """Test ensure_anchor creates new anchor when missing."""
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(exit_code=1, stdout="", stderr=""),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+    ]
+
+    git_manager.ensure_anchor(sample_repo)
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert len(calls) >= 2
+    assert "test -d" in calls[0][0][0]
+    assert "git clone" in calls[1][0][0]
+    assert sample_repo.url in calls[1][0][0]
+
+
+def test_ensure_anchor_fetches_existing(git_manager, mock_ssh_executor):
+    """Test ensure_anchor fetches updates for existing anchor."""
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(exit_code=0, stdout="", stderr=""),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+    ]
+
+    git_manager.ensure_anchor()
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert any("git fetch" in str(call) for call in calls)
+    assert any("git remote set-url" in str(call) for call in calls)
+
+
+def test_refresh_branch_creates_new(git_manager, mock_ssh_executor):
+    """Test refresh_branch creates new branch from origin."""
+    feature = "test-feature"
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=0, stdout="", stderr=""
+    )
+
+    git_manager.refresh_branch(feature)
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert any(f"feat/{feature}" in str(call) for call in calls)
+    assert any("git branch" in str(call) for call in calls)
+
+
+def test_ensure_worktree_creates_new(git_manager, mock_ssh_executor):
+    """Test ensure_worktree creates new worktree when missing."""
+    feature = "test-feature"
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(exit_code=1, stdout="", stderr=""),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+    ]
+
+    result = git_manager.ensure_worktree(feature)
+
+    assert "features/test-feature/test-repo" in result
+    calls = mock_ssh_executor.run.call_args_list
+    assert any("test -d" in str(call) for call in calls)
+    assert any("git worktree add" in str(call) for call in calls)
+
+
+def test_ensure_worktree_resets_existing(git_manager, mock_ssh_executor):
+    """Test ensure_worktree resets existing worktree."""
+    feature = "test-feature"
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(exit_code=0, stdout="", stderr=""),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+    ]
+
+    result = git_manager.ensure_worktree(feature)
+
+    assert "features/test-feature/test-repo" in result
+    calls = mock_ssh_executor.run.call_args_list
+    assert any("git fetch origin" in str(call) for call in calls)
+    assert any("git reset --hard" in str(call) for call in calls)
+
+
+def test_ensure_worktree_with_subdir(mock_ssh_executor, sample_repo_with_subdir):
+    """Test ensure_worktree with anchor_subdir returns correct path."""
+    manager = GitManager(mock_ssh_executor, sample_repo_with_subdir)
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(exit_code=1, stdout="", stderr=""),
+        CommandResult(exit_code=0, stdout="", stderr=""),
+    ]
+
+    result = manager.ensure_worktree("test-feature")
+
+    assert "packages/core" in result
+
+
+def test_destroy_worktree(git_manager, mock_ssh_executor):
+    """Test destroy_worktree removes worktree."""
+    feature = "test-feature"
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=0, stdout="", stderr=""
+    )
+
+    git_manager.destroy_worktree(feature)
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert any("git worktree remove" in str(call) for call in calls)
+    assert any(f"features/{feature}" in str(call) for call in calls)
+
+
+def test_delete_branch(git_manager, mock_ssh_executor):
+    """Test delete_branch removes feature branch."""
+    feature = "test-feature"
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=0, stdout="", stderr=""
+    )
+
+    git_manager.delete_branch(feature)
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert any("git branch -D" in str(call) for call in calls)
+    assert any(f"feat/{feature}" in str(call) for call in calls)
+
+
+def test_locking_in_commands(git_manager, mock_ssh_executor):
+    """Test that git commands are wrapped with flock."""
+    mock_ssh_executor.run.return_value = CommandResult(
+        exit_code=0, stdout="", stderr=""
+    )
+
+    git_manager.ensure_anchor()
+
+    calls = mock_ssh_executor.run.call_args_list
+    assert any("flock" in str(call) for call in calls)
+    assert any("/tmp/sf.lock" in str(call) for call in calls)

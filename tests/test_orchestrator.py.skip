@@ -1,0 +1,254 @@
+"""Tests for orchestrator workflows."""
+
+import pytest
+from unittest.mock import Mock, patch
+from sf.core.orchestrator import (
+    sync_feature,
+    start_session,
+    stop_session,
+    send_prompt,
+    OrchestratorError,
+)
+from sf.core.state import StateStore
+from sf.models import HostConfig, RepoConfig, FeatureConfig, FeatureRepoAttachment
+
+
+@pytest.fixture
+def mock_state_store(sample_host, sample_repo, sample_feature):
+    """Return a mock StateStore with sample data."""
+    mock = Mock(spec=StateStore)
+    mock.load_config.return_value = Mock(hosts=[sample_host], repos=[sample_repo])
+    mock.load_feature.return_value = sample_feature
+    mock.list_features.return_value = ["test-feature"]
+    return mock
+
+
+@pytest.fixture
+def mock_git_manager():
+    """Return a mock GitManager."""
+    mock = Mock()
+    mock.ensure_anchor.return_value = None
+    mock.refresh_branch.return_value = None
+    mock.ensure_worktree.return_value = "/home/user/features/test-feature/test-repo"
+    mock.destroy_worktree.return_value = None
+    mock.delete_branch.return_value = None
+    return mock
+
+
+@pytest.fixture
+def mock_tmux_manager():
+    """Return a mock TmuxManager."""
+    mock = Mock()
+    mock.start_session.return_value = None
+    mock.kill_session.return_value = None
+    mock.list_sessions.return_value = []
+    return mock
+
+
+@pytest.fixture
+def mock_prompt_builder():
+    """Return a mock PromptBuilder."""
+    mock = Mock()
+    mock.build.return_value = "Test prompt content"
+    return mock
+
+
+def test_sync_feature_success(mock_state_store, sample_feature):
+    """Test successful feature sync."""
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with patch("sf.core.orchestrator.SshExecutor"):
+            with patch("sf.core.orchestrator.GitManager") as mock_git_cls:
+                mock_git = Mock()
+                mock_git.ensure_anchor.return_value = None
+                mock_git.refresh_branch.return_value = None
+                mock_git.ensure_worktree.return_value = (
+                    "/home/user/features/test-feature/test-repo"
+                )
+                mock_git_cls.return_value = mock_git
+
+                sync_feature("test-feature")
+
+                mock_git.ensure_anchor.assert_called_once()
+                mock_git.refresh_branch.assert_called_once_with("test-feature")
+                mock_git.ensure_worktree.assert_called_once_with("test-feature")
+
+
+def test_sync_feature_missing_feature(mock_state_store):
+    """Test sync_feature with non-existent feature."""
+    mock_state_store.load_feature.side_effect = FileNotFoundError()
+
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with pytest.raises(OrchestratorError, match="Feature.*not found"):
+            sync_feature("nonexistent")
+
+
+def test_sync_feature_missing_host(mock_state_store, sample_feature):
+    """Test sync_feature with feature referencing unknown host."""
+    config = Mock(hosts=[], repos=[Mock(name="test-repo")])
+    mock_state_store.load_config.return_value = config
+
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with pytest.raises(OrchestratorError, match="Host.*not found"):
+            sync_feature("test-feature")
+
+
+def test_sync_feature_missing_repo(mock_state_store, sample_host, sample_feature):
+    """Test sync_feature with feature referencing unknown repo."""
+    config = Mock(hosts=[sample_host], repos=[])
+    mock_state_store.load_config.return_value = config
+
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with pytest.raises(OrchestratorError, match="Repo.*not found"):
+            sync_feature("test-feature")
+
+
+def test_start_session_success(mock_state_store):
+    """Test successful session start."""
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with patch("sf.core.orchestrator.SshExecutor"):
+            with patch("sf.core.orchestrator.GitManager") as mock_git_cls:
+                mock_git = Mock()
+                mock_git.ensure_worktree.return_value = (
+                    "/home/user/features/test-feature/test-repo"
+                )
+                mock_git_cls.return_value = mock_git
+
+                with patch("sf.core.orchestrator.TmuxManager") as mock_tmux_cls:
+                    mock_tmux = Mock()
+                    mock_tmux_cls.return_value = mock_tmux
+
+                    start_session("test-feature", "test-repo", "test-host", "claude")
+
+                    mock_tmux.start_session.assert_called_once()
+
+
+def test_start_session_with_subdir_override(mock_state_store):
+    """Test start_session with subdir override."""
+    feature_with_subdir = FeatureConfig(
+        name="test-feature",
+        base="main",
+        repos=[
+            FeatureRepoAttachment(
+                repo="test-repo", hosts=["test-host"], subdir="src/app"
+            )
+        ],
+    )
+    mock_state_store.load_feature.return_value = feature_with_subdir
+
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with patch("sf.core.orchestrator.SshExecutor"):
+            with patch("sf.core.orchestrator.GitManager") as mock_git_cls:
+                mock_git = Mock()
+                mock_git.ensure_worktree.return_value = (
+                    "/home/user/features/test-feature/test-repo"
+                )
+                mock_git_cls.return_value = mock_git
+
+                with patch("sf.core.orchestrator.TmuxManager") as mock_tmux_cls:
+                    mock_tmux = Mock()
+                    mock_tmux_cls.return_value = mock_tmux
+
+                    start_session("test-feature", "test-repo", "test-host", "claude")
+
+                    call_args = mock_tmux.start_session.call_args
+                    cwd = call_args[0][1]
+                    assert "src/app" in cwd
+
+
+def test_stop_session_success(mock_state_store):
+    """Test successful session stop."""
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with patch("sf.core.orchestrator.SshExecutor"):
+            with patch("sf.core.orchestrator.TmuxManager") as mock_tmux_cls:
+                mock_tmux = Mock()
+                mock_tmux_cls.return_value = mock_tmux
+
+                stop_session("test-feature", "test-repo", "test-host", "claude")
+
+                mock_tmux.kill_session.assert_called_once()
+
+
+def test_send_prompt_success(mock_state_store, tmp_path):
+    """Test successful prompt delivery."""
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Test prompt")
+
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with patch("sf.core.orchestrator.SshExecutor") as mock_ssh_cls:
+            mock_ssh = Mock()
+            mock_ssh.push_file.return_value = None
+            mock_ssh.run.return_value = Mock(exit_code=0)
+            mock_ssh_cls.return_value = mock_ssh
+
+            with patch("sf.core.orchestrator.GitManager") as mock_git_cls:
+                mock_git = Mock()
+                mock_git.ensure_worktree.return_value = (
+                    "/home/user/features/test-feature/test-repo"
+                )
+                mock_git_cls.return_value = mock_git
+
+                with patch("sf.core.orchestrator.PromptBuilder") as mock_prompt_cls:
+                    mock_prompt = Mock()
+                    mock_prompt.build.return_value = "Prompt content"
+                    mock_prompt_cls.return_value = mock_prompt
+
+                    result = send_prompt(
+                        "test-feature",
+                        "test-repo",
+                        "test-host",
+                        "claude",
+                        str(prompt_file),
+                        ["*.md"],
+                        [],
+                        None,
+                    )
+
+                    assert result > 0
+                    mock_ssh.push_file.assert_called_once()
+                    assert mock_ssh.run.call_count >= 1
+
+
+def test_send_prompt_with_max_bytes(mock_state_store, tmp_path):
+    """Test prompt delivery with max_bytes limit."""
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Short prompt")
+
+    with patch("sf.core.orchestrator.StateStore", return_value=mock_state_store):
+        with patch("sf.core.orchestrator.SshExecutor") as mock_ssh_cls:
+            mock_ssh = Mock()
+            mock_ssh_cls.return_value = mock_ssh
+
+            with patch("sf.core.orchestrator.GitManager") as mock_git_cls:
+                mock_git = Mock()
+                mock_git.ensure_worktree.return_value = "/work/dir"
+                mock_git_cls.return_value = mock_git
+
+                with patch("sf.core.orchestrator.PromptBuilder") as mock_prompt_cls:
+                    mock_prompt = Mock()
+                    mock_prompt.build.return_value = "Truncated content"
+                    mock_prompt_cls.return_value = mock_prompt
+
+                    send_prompt(
+                        "test-feature",
+                        "test-repo",
+                        "test-host",
+                        "claude",
+                        str(prompt_file),
+                        [],
+                        [],
+                        1000,
+                    )
+
+                    build_call = mock_prompt.build.call_args
+                    assert build_call[1]["max_bytes"] == 1000
+
+
+def test_orchestrator_error_wrapping():
+    """Test that errors are wrapped as OrchestratorError."""
+    with patch("sf.core.orchestrator.StateStore") as mock_store_cls:
+        mock_store = Mock()
+        mock_store.load_feature.side_effect = Exception("Unexpected error")
+        mock_store_cls.return_value = mock_store
+
+        with pytest.raises(OrchestratorError, match="Unexpected error"):
+            sync_feature("test-feature")

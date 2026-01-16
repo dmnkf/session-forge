@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "session-forge"
+version = "0.1.0"
+description = "Session Forge (sf): orchestrate remote LLM coding sessions via SSH, git worktrees, and tmux."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+  {name = "Session Forge Maintainers", email = "oss@session-forge.dev"}
+]
+keywords = ["cli", "ssh", "tmux", "git", "llm"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent"
+]
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "PyYAML>=6.0",
+  "pydantic>=2.5"
+]
+
+[project.optional-dependencies]
+server = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30"
+]
+dev = [
+  "pytest>=7.0",
+  "black>=24.0",
+  "isort>=5.12"
+]
+
+[project.scripts]
+sf = "sf.cli:app"
+
+[tool.typer]
+color = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["sf"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"

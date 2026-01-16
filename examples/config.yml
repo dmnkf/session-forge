@@ -1,0 +1,12 @@
+hosts:
+  gpu-01:
+    name: gpu-01
+    target: ubuntu@gpu-01
+    tags: [gpu, primary]
+    env:
+      CUDA_VISIBLE_DEVICES: "0"
+repos:
+  core:
+    name: core
+    url: git@github.com:org/core.git
+    base: main

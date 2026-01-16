@@ -1,0 +1,187 @@
+"""Tests for Prompt builder functionality."""
+
+import pytest
+from unittest.mock import Mock
+from sf.core.prompt import PromptBuilder
+from sf.core.ssh import SshExecutor, CommandResult
+
+
+@pytest.fixture
+def mock_ssh_executor():
+    """Return a mock SshExecutor."""
+    mock = Mock(spec=SshExecutor)
+    mock.run.return_value = CommandResult(exit_code=0, stdout="", stderr="")
+    return mock
+
+
+@pytest.fixture
+def prompt_builder(mock_ssh_executor):
+    """Return a PromptBuilder with mocked SSH."""
+    return PromptBuilder(mock_ssh_executor)
+
+
+def test_prompt_builder_init(prompt_builder, mock_ssh_executor):
+    """Test PromptBuilder initialization."""
+    assert prompt_builder.ssh == mock_ssh_executor
+
+
+def test_build_with_local_file_only(prompt_builder, tmp_path):
+    """Test building prompt with only local file."""
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Test prompt content")
+
+    result = prompt_builder.build(
+        cwd="/work/dir", prompt_file=str(prompt_file), include_globs=[], max_bytes=None
+    )
+
+    assert "Test prompt content" in result
+
+
+def test_build_with_remote_files(prompt_builder, mock_ssh_executor):
+    """Test building prompt with remote file collection."""
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(
+            exit_code=0,
+            stdout="./README.md\n./src/main.py\n./src/utils.py\n",
+            stderr="",
+        ),
+        CommandResult(
+            exit_code=0,
+            stdout="# File: ./README.md\nReadme content\n# File: ./src/main.py\nCode content\n",
+            stderr="",
+        ),
+    ]
+
+    result = prompt_builder.build(
+        cwd="/work/dir",
+        prompt_file=None,
+        include_globs=["*.md", "src/**/*.py"],
+        max_bytes=None,
+    )
+
+    assert "# File: ./README.md" in result
+    assert "# File: ./src/main.py" in result
+    assert "Readme content" in result
+    assert "Code content" in result
+
+
+def test_build_filters_by_include_globs(prompt_builder, mock_ssh_executor):
+    """Test that include globs filter files correctly."""
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(
+            exit_code=0,
+            stdout="./README.md\n./test.txt\n./src/main.py\n",
+            stderr="",
+        ),
+        CommandResult(exit_code=0, stdout="# File: ./README.md\nContent\n", stderr=""),
+    ]
+
+    result = prompt_builder.build(
+        cwd="/work/dir", prompt_file=None, include_globs=["*.md"], max_bytes=None
+    )
+
+    calls = mock_ssh_executor.run.call_args_list
+    find_command = calls[0][0][0]
+    assert "find" in find_command
+
+    assert "# File: ./README.md" in result
+
+
+def test_build_with_exclude_globs(prompt_builder, mock_ssh_executor):
+    """Test that exclude globs filter out files."""
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(
+            exit_code=0,
+            stdout="./src/main.py\n./src/test.py\n./dist/build.py\n",
+            stderr="",
+        ),
+        CommandResult(
+            exit_code=0,
+            stdout="# File: ./src/main.py\nContent\n# File: ./src/test.py\nTest\n",
+            stderr="",
+        ),
+    ]
+
+    result = prompt_builder.build(
+        cwd="/work/dir",
+        prompt_file=None,
+        include_globs=["**/*.py"],
+        exclude_globs=["dist/**"],
+        max_bytes=None,
+    )
+
+    assert "./src/main.py" in result
+    assert "dist/build.py" not in result
+
+
+def test_build_with_max_bytes(prompt_builder, tmp_path):
+    """Test that max_bytes truncates content."""
+    prompt_file = tmp_path / "prompt.txt"
+    long_content = "x" * 1000
+    prompt_file.write_text(long_content)
+
+    result = prompt_builder.build(
+        cwd="/work/dir", prompt_file=str(prompt_file), include_globs=[], max_bytes=100
+    )
+
+    assert len(result) <= 100
+    assert "..." in result or len(result) == 100
+
+
+def test_build_combines_local_and_remote(prompt_builder, mock_ssh_executor, tmp_path):
+    """Test building prompt combines local file and remote files."""
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Local instructions\n")
+
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(exit_code=0, stdout="./README.md\n", stderr=""),
+        CommandResult(
+            exit_code=0, stdout="# File: ./README.md\nRemote content\n", stderr=""
+        ),
+    ]
+
+    result = prompt_builder.build(
+        cwd="/work/dir",
+        prompt_file=str(prompt_file),
+        include_globs=["*.md"],
+        max_bytes=None,
+    )
+
+    assert "Local instructions" in result
+    assert "# File: ./README.md" in result
+    assert "Remote content" in result
+
+
+def test_build_empty_include_globs(prompt_builder, tmp_path):
+    """Test that empty include_globs only returns local prompt."""
+    prompt_file = tmp_path / "prompt.txt"
+    prompt_file.write_text("Only local")
+
+    result = prompt_builder.build(
+        cwd="/work/dir", prompt_file=str(prompt_file), include_globs=[], max_bytes=None
+    )
+
+    assert result == "Only local"
+
+
+def test_collect_files_sorting(prompt_builder, mock_ssh_executor):
+    """Test that collected files are sorted."""
+    mock_ssh_executor.run.side_effect = [
+        CommandResult(
+            exit_code=0, stdout="./z.txt\n./a.txt\n./m.txt\n", stderr=""
+        ),
+        CommandResult(
+            exit_code=0,
+            stdout="# File: ./a.txt\n# File: ./m.txt\n# File: ./z.txt\n",
+            stderr="",
+        ),
+    ]
+
+    result = prompt_builder.build(
+        cwd="/work/dir", prompt_file=None, include_globs=["*.txt"], max_bytes=None
+    )
+
+    a_pos = result.find("./a.txt")
+    m_pos = result.find("./m.txt")
+    z_pos = result.find("./z.txt")
+    assert a_pos < m_pos < z_pos
