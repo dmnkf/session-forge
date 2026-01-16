@@ -1,12 +1,20 @@
 """Integration tests for core components with correct API usage."""
 
-import pytest
 from unittest.mock import Mock, patch
-from sf.core.ssh import SshExecutor, CommandResult
+
+import pytest
+
 from sf.core.git import GitManager
-from sf.core.tmux import TmuxManager
 from sf.core.prompt import PromptBuilder
-from sf.models import HostConfig, RepoConfig, FeatureConfig, SessionDescriptor, PromptPlan
+from sf.core.ssh import CommandResult, SshExecutor
+from sf.core.tmux import TmuxManager
+from sf.models import (
+    FeatureConfig,
+    HostConfig,
+    PromptPlan,
+    RepoConfig,
+    SessionDescriptor,
+)
 
 
 @pytest.fixture
@@ -16,9 +24,7 @@ def sample_host():
 
 @pytest.fixture
 def sample_repo():
-    return RepoConfig(
-        name="test-repo", url="https://github.com/test/repo.git", base="main"
-    )
+    return RepoConfig(name="test-repo", url="https://github.com/test/repo.git", base="main")
 
 
 @pytest.fixture
@@ -64,7 +70,12 @@ def test_prompt_builder_uses_plan(mock_ssh, tmp_path):
     prompt_file.write_text("Test content")
 
     plan = PromptPlan(
-        prompt_file=str(prompt_file), include=["*.md"], exclude=[], max_bytes=None
+        feature="test-feature",
+        repo="test-repo",
+        prompt_file=str(prompt_file),
+        include=["*.md"],
+        exclude=[],
+        max_bytes=None,
     )
 
     mock_ssh.run.return_value = CommandResult(exit_code=0, stdout="", stderr="")

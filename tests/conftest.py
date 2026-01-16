@@ -1,7 +1,8 @@
 """Shared test fixtures for Session Forge tests."""
 
 import pytest
-from sf.models import HostConfig, RepoConfig, FeatureConfig, FeatureRepoAttachment
+
+from sf.models import FeatureConfig, FeatureRepoAttachment, HostConfig, RepoConfig
 
 
 @pytest.fixture
@@ -49,11 +50,7 @@ def sample_feature():
     return FeatureConfig(
         name="test-feature",
         base="main",
-        repos=[
-            FeatureRepoAttachment(
-                repo="test-repo", hosts=["test-host"], subdir=None
-            )
-        ],
+        repos=[FeatureRepoAttachment(repo="test-repo", hosts=["test-host"], subdir=None)],
     )
 
 
@@ -64,11 +61,7 @@ def sample_feature_multi_host():
         name="multi-host-feature",
         base="develop",
         repos=[
-            FeatureRepoAttachment(
-                repo="test-repo", hosts=["host1", "host2", "host3"], subdir=None
-            ),
-            FeatureRepoAttachment(
-                repo="another-repo", hosts=["host1"], subdir="src"
-            ),
+            FeatureRepoAttachment(repo="test-repo", hosts=["host1", "host2", "host3"], subdir=None),
+            FeatureRepoAttachment(repo="another-repo", hosts=["host1"], subdir="src"),
         ],
     )
