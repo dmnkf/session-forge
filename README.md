@@ -58,6 +58,8 @@ uv sync
 uv run sf --help
 ```
 
+Publishing to PyPI is automated on git tags (see "Release" below).
+
 Need developer tooling? Sync extras during install:
 
 ```bash
@@ -117,9 +119,16 @@ uv run black --check src tests
 
 Makefile recipes delegate to `uv` (`make dev`, `make lint`, `make test`).
 
-## Deployment with uv
+## Release
 
-Publish packages directly from uv:
+Publish happens automatically when you push a version tag (PyPI trusted publishing):
+
+```bash
+git tag v0.1.0
+ git push origin v0.1.0
+```
+
+To publish manually:
 
 ```bash
 uv build
