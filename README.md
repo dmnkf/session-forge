@@ -1,6 +1,6 @@
 # Session Forge (sf)
 
-Session Forge orchestrates LLM-assisted development sessions across fleets of machines. It combines SSH automation, git worktrees, and project metadata into a single CLI (`sf`) that prepares workspaces for tools like HAPI. With a five-minute onboarding flow, you can install the CLI, bootstrap your hosts, sync worktrees, and then hand off sessions to HAPI for mobile control.
+Session Forge orchestrates LLM-assisted development sessions across fleets of machines. It combines SSH automation, git worktrees, and project metadata into a single CLI (`sf`) that prepares workspaces for tools like [HAPI](https://github.com/tiann/hapi). With a five-minute onboarding flow, you can install the CLI, bootstrap your hosts, sync worktrees, and then hand off sessions to HAPI for mobile control.
 
 ## Highlights
 
