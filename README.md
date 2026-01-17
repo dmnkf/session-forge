@@ -9,6 +9,29 @@ Session Forge orchestrates LLM-assisted development sessions across fleets of ma
 - **Project overview** – inspect host, repo, and feature mapping to keep fleets aligned.
 - **HAPI handoff** – use SF to prepare worktrees, then run HAPI for mobile session control and approvals.
 
+## Project view (feature = workspace)
+
+A feature in Session Forge is a project workspace that can span multiple repositories. `sf attach` binds repos to a feature, and `sf sync` lays them out under a shared directory on each host.
+
+```text
+host: gpu-01
+├─ repo-cache/
+│  ├─ core.anchor/
+│  └─ web.anchor/
+└─ features/
+   └─ payments/
+      ├─ core/   (worktree, feat/payments)
+      ├─ web/    (worktree, feat/payments)
+      └─ infra/  (worktree, feat/payments)
+```
+
+That `features/<feature>` directory is the shared workspace. Start HAPI at a repo worktree or at the feature root if you want a cross‑repo session.
+
+```bash
+sf hapi start payments core
+ssh ubuntu@gpu-01 'cd ~/features/payments && hapi'
+```
+
 ## Installation
 
 ```bash
@@ -64,7 +87,7 @@ sf worktree list demo
 | `sf attach <feature> <repo> --hosts ...` | Attach a repo to a feature on specific hosts |
 | `sf sync <feature>` | Ensure anchor clone, feature branch, and worktrees exist on each host |
 | `sf worktree list <feature>` | Show worktree paths per host |
-| `sf hapi start <feature> <repo>` | Print SSH command to start HAPI in worktree |
+| `sf hapi start <feature> <repo>` | Print SSH command to start HAPI in repo worktree |
 | `sf feature destroy <feature> --yes` | Remove worktrees and delete the feature |
 | `sf bootstrap --hosts ...` | Check git (and optional HAPI) on hosts |
 | `sf doctor` | Display local state summary |
@@ -90,7 +113,7 @@ uv publish
 
 ## HAPI integration
 
-Session Forge focuses on project setup and worktree orchestration; HAPI provides the mobile session UI. After `sf sync`, use `sf hapi start <feature> <repo>` or connect directly to the worktree path from `sf worktree list`.
+Session Forge focuses on project setup and worktree orchestration; HAPI provides the mobile session UI. After `sf sync`, start HAPI inside a repo worktree or the shared feature directory (use `sf worktree list` to locate paths).
 
 ## License
 
