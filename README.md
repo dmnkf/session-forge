@@ -13,6 +13,21 @@ Session Forge orchestrates LLM-assisted development sessions across fleets of ma
 
 A feature in Session Forge is a project workspace that can span multiple repositories. `sf attach` binds repos to a feature, and `sf sync` lays them out under a shared directory on each host.
 
+```mermaid
+flowchart LR
+    SF[Session Forge] -->|sf attach/sync| Host
+    subgraph Host[gpu-01]
+        direction TB
+        Cache[repo-cache/*.anchor]
+        Feature[features/payments]
+        Feature --> Core[core (worktree)]
+        Feature --> Web[web (worktree)]
+        Feature --> Infra[infra (worktree)]
+    end
+    HAPI[HAPI mobile UI] -->|run in worktree| Core
+    HAPI -->|run at feature root| Feature
+```
+
 ```text
 host: gpu-01
 ├─ repo-cache/
@@ -25,7 +40,7 @@ host: gpu-01
       └─ infra/  (worktree, feat/payments)
 ```
 
-That `features/<feature>` directory is the shared workspace. Start HAPI at a repo worktree or at the feature root if you want a cross‑repo session.
+That `features/<feature>` directory is the shared workspace. Start HAPI at a repo worktree or at the feature root if you want a cross‑repo session (or hop between repos in the same directory).
 
 ```bash
 sf hapi start payments core
