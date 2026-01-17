@@ -6,41 +6,31 @@ import json
 import os
 import shlex
 import subprocess
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from sf import __version__
-from sf.core.llm import resolve_command
-from sf.core.orchestrator import (
-    OrchestratorError,
-)
+from sf.core.orchestrator import OrchestratorError
 from sf.core.orchestrator import destroy_feature as orchestrator_destroy_feature
-from sf.core.orchestrator import send_prompt as orchestrator_send_prompt
-from sf.core.orchestrator import start_session as orchestrator_start_session
-from sf.core.orchestrator import stop_session as orchestrator_stop_session
 from sf.core.orchestrator import sync_feature as orchestrator_sync_feature
 from sf.core.ssh import SshExecutor
 from sf.core.state import StateStore, ensure_state_dirs
-from sf.core.tmux import TmuxManager
 from sf.models import FeatureConfig, FeatureRepoAttachment, HostConfig, RepoConfig
 
 console = Console()
-app = typer.Typer(help="Session Forge CLI (sf): manage remote LLM development sessions.")
+app = typer.Typer(help="Session Forge CLI (sf): manage remote worktrees and project setup.")
 host_app = typer.Typer(help="Manage known hosts")
 repo_app = typer.Typer(help="Manage repositories")
 feature_app = typer.Typer(help="Manage features")
-session_app = typer.Typer(help="Manage LLM sessions")
 worktree_app = typer.Typer(help="Inspect worktree locations")
 hapi_app = typer.Typer(help="HAPI helpers")
 
 app.add_typer(host_app, name="host")
 app.add_typer(repo_app, name="repo")
 app.add_typer(feature_app, name="feature")
-app.add_typer(session_app, name="session")
 app.add_typer(worktree_app, name="worktree")
 app.add_typer(hapi_app, name="hapi")
 
@@ -92,7 +82,7 @@ def resolve_worktree_path(
     repo_cfg: RepoConfig,
     attachment: FeatureRepoAttachment,
     *,
-    extra_subdir: Optional[str] = None,
+    extra_subdir: str | None = None,
 ) -> str:
     base_path = f"features/{feature_cfg.name}/{repo_cfg.name}"
     worktree_path = repo_cfg.session_root(base_path)
@@ -134,30 +124,16 @@ def up(
     host: str = typer.Option(..., "--host", help="Format: name=user@host"),
     repo: str = typer.Option(..., "--repo", help="Format: name=git-url"),
     feature: str = typer.Option(..., "--feature", help="Feature name to create or reuse"),
-    llm: str = typer.Option("claude", "--llm", help="LLM command alias"),
     base: str = typer.Option("main", "--base", help="Feature base branch"),
-    repo_base: Optional[str] = typer.Option(
+    repo_base: str | None = typer.Option(
         None, "--repo-base", help="Repository base branch", show_default=False
-    ),
-    prompt: bool = typer.Option(False, "--prompt", help="Send prompt after starting session"),
-    prompt_file: Optional[Path] = typer.Option(
-        None, "--prompt-file", help="Optional prompt file", show_default=False
-    ),
-    include: Optional[List[str]] = typer.Option(
-        None, "--include", help="Glob pattern to include (repeatable)", show_default=False
-    ),
-    exclude: Optional[List[str]] = typer.Option(
-        None, "--exclude", help="Glob pattern to exclude", show_default=False
-    ),
-    max_bytes: Optional[int] = typer.Option(
-        None, "--max-bytes", help="Maximum prompt payload size", show_default=False
     ),
     accept_new_hostkeys: bool = typer.Option(
         False, "--accept-new-hostkeys", help="Set SF_ACCEPT_NEW_HOSTKEYS=1 for remote calls"
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview remote operations"),
 ) -> None:
-    """Bootstrap state, sync, and start an LLM session in one step."""
+    """Bootstrap state, sync, and prepare the worktree in one step."""
 
     def _parse_pair(flag: str, payload: str) -> tuple[str, str]:
         if "=" not in payload:
@@ -213,37 +189,6 @@ def up(
             console.print(
                 f"Synced [bold]{item['repo']}[/bold] on [bold]{item['host']}[/bold] -> {item['worktree']}"
             )
-        session_info = orchestrator_start_session(
-            feature,
-            repo_name,
-            llm=llm,
-            host=host_name,
-            dry_run=dry_run,
-        )
-        console.print(
-            f"Session [bold]{session_info['session']}[/bold] ready on {session_info['host']} (cwd={session_info['cwd']})"
-        )
-        should_prompt = (
-            prompt
-            or prompt_file is not None
-            or include is not None
-            or exclude is not None
-            or max_bytes is not None
-        )
-        if should_prompt and not dry_run:
-            orchestrator_send_prompt(
-                feature,
-                repo_name,
-                llm=llm,
-                prompt_file=prompt_file,
-                include=include,
-                exclude=exclude,
-                max_bytes=max_bytes,
-                host=host_name,
-            )
-            console.print("Prompt delivered to LLM session")
-        elif should_prompt and dry_run:
-            console.print("[yellow]Skipping prompt delivery due to --dry-run[/yellow]")
     except OrchestratorError as exc:
         abort(str(exc))
 
@@ -292,9 +237,7 @@ def repo_add(
     name: str = typer.Argument(..., help="Repo name"),
     url: str = typer.Argument(..., help="Git URL"),
     base: str = typer.Option("main", "--base", help="Default base branch"),
-    anchor_subdir: Optional[str] = typer.Option(
-        None, "--anchor-subdir", help="Subdir for LLM work"
-    ),
+    anchor_subdir: str | None = typer.Option(None, "--anchor-subdir", help="Subdir for LLM work"),
 ) -> None:
     config = state_store.load_config()
     repo = RepoConfig(name=name, url=url, base=base, anchor_subdir=anchor_subdir)
@@ -355,7 +298,7 @@ def feature_attach(
     feature: str = typer.Argument(..., help="Feature name"),
     repo: str = typer.Argument(..., help="Repo name"),
     hosts: str = typer.Option(..., "--hosts", help="Comma-separated host names"),
-    subdir: Optional[str] = typer.Option(None, "--subdir", help="Override working subdir"),
+    subdir: str | None = typer.Option(None, "--subdir", help="Override working subdir"),
 ) -> None:
     config = state_store.load_config()
     feature_cfg = ensure_feature_exists(feature)
@@ -380,7 +323,7 @@ def feature_attach(
 @feature_app.command("sync")
 def feature_sync(
     feature: str = typer.Argument(..., help="Feature name"),
-    repo: Optional[str] = typer.Option(None, "--repo", help="Limit to specific repo"),
+    repo: str | None = typer.Option(None, "--repo", help="Limit to specific repo"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print commands without executing"),
 ) -> None:
     try:
@@ -411,104 +354,8 @@ def feature_destroy(
 
 
 # ---------------------------------------------------------------------------
-# Session commands
+# Worktree + HAPI helpers
 # ---------------------------------------------------------------------------
-
-
-@session_app.command("start")
-def session_start(
-    feature: str = typer.Argument(..., help="Feature name"),
-    repo: str = typer.Argument(..., help="Repo name"),
-    llm: str = typer.Option("claude", "--llm", help="LLM adapter"),
-    host: Optional[str] = typer.Option(None, "--host", help="Override host"),
-    subdir: Optional[str] = typer.Option(None, "--subdir", help="Override subdir"),
-    command: Optional[str] = typer.Option(None, "--command", help="Override command"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print commands without executing"),
-) -> None:
-    try:
-        result = orchestrator_start_session(
-            feature,
-            repo,
-            llm=llm,
-            host=host,
-            subdir=subdir,
-            command=command,
-            dry_run=dry_run,
-        )
-    except OrchestratorError as exc:
-        abort(str(exc))
-    console.print(
-        f"Started session [bold]{result['session']}[/bold] on host {result['host']} (cwd={result['cwd']})"
-    )
-
-
-@session_app.command("stop")
-def session_stop(
-    feature: str = typer.Argument(..., help="Feature name"),
-    repo: str = typer.Argument(..., help="Repo"),
-    llm: str = typer.Option("claude", "--llm", help="LLM adapter"),
-    host: Optional[str] = typer.Option(None, "--host", help="Host override"),
-) -> None:
-    try:
-        result = orchestrator_stop_session(
-            feature,
-            repo,
-            llm=llm,
-            host=host,
-        )
-    except OrchestratorError as exc:
-        abort(str(exc))
-    console.print(f"Stopped session {result['session']} on {result['host']}")
-
-
-@session_app.command("status")
-def session_status() -> None:
-    config = state_store.load_config()
-    table = Table(title="Sessions")
-    table.add_column("Host")
-    table.add_column("Sessions")
-    if not config.hosts:
-        console.print("No hosts configured")
-        return
-    for host_cfg in config.hosts.values():
-        ssh = SshExecutor(host_cfg, dry_run=False)
-        tmux = TmuxManager(ssh)
-        sessions = tmux.list_sessions()
-        table.add_row(host_cfg.name, ", ".join(sessions) or "-")
-    console.print(table)
-
-
-@session_app.command("prompt")
-def session_prompt(
-    feature: str = typer.Argument(..., help="Feature name"),
-    repo: str = typer.Argument(..., help="Repo name"),
-    llm: str = typer.Option("claude", "--llm", help="LLM adapter"),
-    host: Optional[str] = typer.Option(None, "--host", help="Target host"),
-    prompt_file: Optional[Path] = typer.Option(None, "--prompt-file", help="Local prompt file"),
-    include: List[str] = typer.Option(
-        [], "--include", help="Remote glob to include", show_default=False
-    ),
-    exclude: List[str] = typer.Option(
-        [], "--exclude", help="Remote glob exclude", show_default=False
-    ),
-    max_bytes: Optional[int] = typer.Option(None, "--max-bytes", help="Byte cap for context"),
-) -> None:
-    try:
-        result = orchestrator_send_prompt(
-            feature,
-            repo,
-            llm=llm,
-            prompt_file=prompt_file,
-            include=include,
-            exclude=exclude,
-            max_bytes=max_bytes,
-            host=host,
-        )
-    except OrchestratorError as exc:
-        abort(str(exc))
-    console.print(
-        f"Sent prompt ({result['bytes']} bytes) to session {result['session']} on {result['host']}"
-    )
 
 
 @worktree_app.command("list")
@@ -531,8 +378,8 @@ def worktree_list(feature: str = typer.Argument(..., help="Feature name")) -> No
 def hapi_start(
     feature: str = typer.Argument(..., help="Feature name"),
     repo: str = typer.Argument(..., help="Repo name"),
-    host: Optional[str] = typer.Option(None, "--host", help="Override host"),
-    subdir: Optional[str] = typer.Option(None, "--subdir", help="Append extra subdir"),
+    host: str | None = typer.Option(None, "--host", help="Override host"),
+    subdir: str | None = typer.Option(None, "--subdir", help="Append extra subdir"),
     execute: bool = typer.Option(False, "--execute", help="Run the SSH command directly"),
 ) -> None:
     config = state_store.load_config()
@@ -570,7 +417,6 @@ def hapi_start(
 @app.command()
 def bootstrap(
     hosts: str = typer.Option(..., "--hosts", help="Comma-separated host names"),
-    llms: List[str] = typer.Option(["claude", "codex"], "--llm", help="LLM binaries to check"),
     check_hapi: bool = typer.Option(True, "--hapi/--no-hapi", help="Check HAPI binary"),
 ) -> None:
     config = state_store.load_config()
@@ -583,11 +429,7 @@ def bootstrap(
         ssh = SshExecutor(host_cfg)
         checks = {
             "git": "git --version",
-            "tmux": "tmux -V",
         }
-        for llm in llms:
-            command = resolve_command(llm).split()[0]
-            checks[f"{llm} cli"] = f"command -v {shlex.quote(command)}"
         if check_hapi:
             checks["hapi cli"] = "command -v hapi"
         for label, command in checks.items():
@@ -626,34 +468,12 @@ def quickstart() -> None:
         "sf feature new demo --base main",
         "sf attach demo core --hosts a100-01",
         "sf sync demo",
-        "sf session start demo core --llm claude",
         "sf hapi start demo core",
-        'sf prompt demo core --include "README.md"',
+        "sf worktree list demo",
     ]
     console.print("[bold]Five-minute quickstart[/bold]")
     for idx, step in enumerate(steps, start=1):
         console.print(f" {idx}. {step}")
-
-
-@app.command()
-def serve(
-    host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
-    port: int = typer.Option(8765, "--port", help="Bind port"),
-    reload: bool = typer.Option(False, "--reload", help="Enable autoreload"),
-    log_level: str = typer.Option("info", "--log-level", help="uvicorn log level"),
-) -> None:
-    """Run the Session Forge FastAPI server."""
-
-    try:
-        import uvicorn
-    except ImportError as exc:  # pragma: no cover - runtime import
-        abort(
-            "uvicorn is not installed. Install the server extra with 'uv tool install \"session-"
-            "forge[server]\"' or run 'uv sync --extra server'."
-        )
-    from sf.server.app import app as fastapi_app
-
-    uvicorn.run(fastapi_app, host=host, port=port, reload=reload, log_level=log_level)
 
 
 if __name__ == "__main__":  # pragma: no cover

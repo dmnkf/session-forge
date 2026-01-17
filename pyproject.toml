@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "session-forge"
 version = "0.1.0"
-description = "Session Forge (sf): orchestrate remote LLM coding sessions via SSH, git worktrees, and tmux."
+description = "Session Forge (sf): orchestrate remote worktrees and project setup for HAPI-managed sessions."
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
 authors = [
   {name = "Session Forge Maintainers", email = "oss@session-forge.dev"}
 ]
-keywords = ["cli", "ssh", "tmux", "git", "llm"]
+keywords = ["cli", "ssh", "git", "worktree", "hapi"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -27,10 +27,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-server = [
-  "fastapi>=0.115",
-  "uvicorn[standard]>=0.30"
-]
 dev = [
   "pytest>=7.0",
   "black>=24.0",

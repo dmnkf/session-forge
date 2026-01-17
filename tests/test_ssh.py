@@ -1,8 +1,11 @@
 """Tests for SSH executor functionality."""
 
+from pathlib import Path
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, call
-from sf.core.ssh import SshExecutor, CommandResult
+
+from sf.core.ssh import CommandResult, SshExecutor
 from sf.models import HostConfig
 
 
@@ -90,35 +93,33 @@ def test_ssh_executor_with_env(sample_host):
         assert "export VAR=value" in command_str
 
 
-def test_ssh_executor_push_file(sample_host):
+def test_ssh_executor_push_file(sample_host, tmp_path):
     """Test SshExecutor file push via SCP."""
     executor = SshExecutor(sample_host)
+    local_file = tmp_path / "file.txt"
+    local_file.write_text("payload")
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = Mock(returncode=0, stdout=b"", stderr=b"")
-        executor.push_file("/local/file.txt", "/remote/file.txt")
+        executor.push_file(local_file, "/remote/file.txt")
 
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
+        assert mock_run.call_count == 2
+        args = mock_run.call_args_list[1][0][0]
         assert "scp" in args
-        assert "/local/file.txt" in args
+        assert str(local_file) in args
         assert f"{sample_host.target}:/remote/file.txt" in args
 
 
-def test_ssh_executor_push_file_localhost():
-    """Test SshExecutor file push to localhost uses cp."""
+def test_ssh_executor_push_file_localhost(tmp_path):
+    """Test SshExecutor file push to localhost uses local copy."""
     local = HostConfig(name="local", target="localhost", tags=[], env={})
     executor = SshExecutor(local)
+    local_file = tmp_path / "file.txt"
+    local_file.write_text("payload")
 
-    with patch("subprocess.run") as mock_run:
-        mock_run.return_value = Mock(returncode=0, stdout=b"", stderr=b"")
-        executor.push_file("/src/file.txt", "/dst/file.txt")
-
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
-        assert args[0] == "cp"
-        assert "/src/file.txt" in args
-        assert "/dst/file.txt" in args
+    destination = tmp_path / "out" / "file.txt"
+    executor.push_file(local_file, str(destination))
+    assert destination.read_text() == "payload"
 
 
 def test_ssh_executor_check_false(sample_host):
@@ -126,7 +127,7 @@ def test_ssh_executor_check_false(sample_host):
     executor = SshExecutor(sample_host)
 
     with patch("subprocess.run") as mock_run:
-        mock_run.return_value = Mock(returncode=1, stdout=b"", stderr=b"error")
+        mock_run.return_value = Mock(returncode=1, stdout="", stderr="error")
         result = executor.run("false", check=False)
 
         assert result.exit_code == 1
@@ -138,7 +139,7 @@ def test_ssh_executor_host_env_merged(sample_host):
     executor = SshExecutor(sample_host)
 
     with patch("subprocess.run") as mock_run:
-        mock_run.return_value = Mock(returncode=0, stdout=b"", stderr=b"")
+        mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
         executor.run("echo test")
 
         command_str = mock_run.call_args[0][0][-1]

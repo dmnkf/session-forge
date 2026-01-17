@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -31,7 +31,7 @@ class RepoConfig(BaseModel):
     name: str = Field(..., description="Logical repo name")
     url: str = Field(..., description="Git URL for anchor clone")
     base: str = Field(DEFAULT_BASE_BRANCH, description="Default base branch")
-    anchor_subdir: Optional[str] = Field(
+    anchor_subdir: str | None = Field(
         default=None,
         description="Optional subdirectory inside repo for sessions (e.g., monorepo subset)",
     )
@@ -47,7 +47,7 @@ class FeatureRepoAttachment(BaseModel):
 
     repo: str
     hosts: List[str] = Field(..., description="Host names that should host the worktree")
-    subdir: Optional[str] = Field(
+    subdir: str | None = Field(
         default=None,
         description="Optional subdirectory override used when starting sessions",
     )
@@ -87,29 +87,6 @@ class SfConfig(BaseModel):
         self.repos[repo.name] = repo
 
 
-class PromptPlan(BaseModel):
-    """Describes the prompt content to send to an LLM session."""
-
-    feature: str
-    repo: str
-    prompt_file: Optional[Path]
-    include: List[str] = Field(default_factory=list)
-    exclude: List[str] = Field(default_factory=list)
-    max_bytes: Optional[int] = None
-
-
-class SessionDescriptor(BaseModel):
-    """Unique identifier for a remote LLM tmux session."""
-
-    feature: str
-    repo: str
-    llm: str
-
-    @property
-    def name(self) -> str:
-        return f"feat:{self.feature}:{self.repo}:{self.llm}"
-
-
 __all__ = [
     "CACHE_DIR",
     "CONFIG_FILE",
@@ -119,9 +96,7 @@ __all__ = [
     "FeatureRepoAttachment",
     "HostConfig",
     "LOG_DIR",
-    "PromptPlan",
     "RepoConfig",
-    "SessionDescriptor",
     "SfConfig",
     "STATE_ROOT",
 ]

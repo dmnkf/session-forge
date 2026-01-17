@@ -1,12 +1,12 @@
 UV ?= uv
 
-.PHONY: install dev test lint format serve
+.PHONY: install dev test lint format
 
 install:
 	$(UV) sync
 
 dev:
-	$(UV) sync --extra dev --extra server
+	$(UV) sync --extra dev
 
 lint:
 	$(UV) run black --check src tests
@@ -18,6 +18,3 @@ format:
 
 test:
 	$(UV) run pytest
-
-serve:
-	$(UV) run uvicorn sf.server.app:app --host 127.0.0.1 --port 8765

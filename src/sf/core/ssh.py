@@ -51,7 +51,11 @@ class SshExecutor:
         self, command: str, *, cwd: Optional[str], env: Optional[Dict[str, str]]
     ) -> str:
         segments = []
-        exports = self._remote_preamble(env)
+        env_vars: Dict[str, str] = {}
+        env_vars.update(self.host.env)
+        if env:
+            env_vars.update(env)
+        exports = self._remote_preamble(env_vars or None)
         if exports:
             segments.append(exports)
         if cwd:

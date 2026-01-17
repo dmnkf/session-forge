@@ -33,7 +33,7 @@ Use `--tag` and `--env KEY=VALUE` when you need metadata or extra environment va
 sf bootstrap --hosts gpu-01
 ```
 
-This checks for `git`, `tmux`, the default LLM binaries (`claude`, `codex`), and `hapi`. Missing tools are surfaced with suggestions.
+This checks for `git` (and optionally `hapi`). Missing tools are surfaced with suggestions.
 
 ## 5. Create the first feature
 
@@ -52,50 +52,34 @@ sf sync payments
 
 This creates/updates the anchor clone (`repo-cache/<repo>.anchor`), refreshes branch `feat/payments`, and ensures a git worktree at `features/payments/<repo>` on every host.
 
-## 7. Start an LLM session
-
-```bash
-sf session start payments core --llm claude
-```
-
-The session name is `feat:payments:core:claude`. Session Forge runs `tmux new -d -s feat:... -c features/payments/core "claude --chat"` on the host, creating an interactive shell you can attach with `tmux attach -t feat:payments:core:claude` via SSH.
-
-If you want mobile control via HAPI, start it in the worktree instead:
+## 7. Start HAPI in the worktree
 
 ```bash
 sf hapi start payments core
 sf hapi start payments core --execute
 ```
 
-## 8. Send a prompt with context
+HAPI runs in `features/payments/core` and exposes mobile control for the session.
+
+## 8. Check status and teardown
 
 ```bash
-sf prompt payments core --include 'src/**/*.py' --include 'README.md'
-```
-
-The prompt builder resolves globs relative to the worktree, applies the optional byte cap, uploads the payload, and uses `tmux load-buffer` + `paste-buffer` to deliver it to the running LLM process.
-
-## 9. Check status and teardown
-
-```bash
-sf session status
+sf worktree list payments
 sf feature destroy payments --yes
 ```
 
-`sf session status` lists active tmux sessions per host. `sf feature destroy` removes worktrees, deletes the feature branch, and cleans up the feature definition file.
+`sf worktree list` helps you confirm paths across hosts. `sf feature destroy` removes worktrees, deletes the feature branch, and cleans up the feature definition file.
 
 ## What's next?
 
 - `sf doctor` summarizes local state.
-- `sf serve` exposes the same orchestration via FastAPI (`/sync`, `/sessions`, `/prompt`).
 - `sf worktree list payments` shows worktree paths when you want to open HAPI directly.
-- Customize LLM commands in `src/sf/core/llm.py` or add adapters.
-- Extend prompt templates in `src/sf/core/prompt.py`.
+- Adjust worktree handling in `src/sf/core/git.py` if you need custom layouts.
 
 ## Local development with uv
 
 ```bash
-uv sync --extra dev --extra server
+uv sync --extra dev
 uv run pytest
 uv run black --check src tests
 ```

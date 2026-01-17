@@ -20,20 +20,6 @@ ssh ubuntu@gpu-01 'cd ~/features/payments/core && git status'
 
 Commit or stash changes, then rerun `sf sync payments`.
 
-## tmux not installed
+## HAPI not installed
 
-`sf bootstrap` surfaces missing binaries. Install tmux on Ubuntu:
-
-```bash
-sudo apt-get update && sudo apt-get install -y tmux
-```
-
-On macOS hosts, use `brew install tmux`.
-
-## Prompt payload empty
-
-Make sure the glob actually matches files on the remote worktree. Use `sf prompt ... --include 'src/**/*.py'` after running `sf sync`, or specify `--prompt-file` to seed content. The prompt builder truncates output according to `--max-bytes`.
-
-## Server 500 errors
-
-FastAPI wraps orchestration errors with HTTP 400 responses. Check the JSON body for the detailed message. For deeper debugging, run `sf serve --reload --log-level debug` and watch the console.
+`sf bootstrap` surfaces missing binaries. Install HAPI using `brew install tiann/tap/hapi` or `npm install -g @twsxtd/hapi`.

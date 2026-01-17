@@ -1,16 +1,6 @@
 from pathlib import Path
 
-from sf.models import (
-    FeatureConfig,
-    FeatureRepoAttachment,
-    RepoConfig,
-    SessionDescriptor,
-)
-
-
-def test_session_descriptor_name():
-    desc = SessionDescriptor(feature="demo", repo="core", llm="claude")
-    assert desc.name == "feat:demo:core:claude"
+from sf.models import FeatureConfig, FeatureRepoAttachment, RepoConfig
 
 
 def test_feature_attachment_lookup():
