@@ -33,7 +33,7 @@ Use `--tag` and `--env KEY=VALUE` when you need metadata or extra environment va
 sf bootstrap --hosts gpu-01
 ```
 
-This checks for `git`, `tmux`, and the default LLM binaries (`claude`, `codex`). Missing tools are surfaced with suggestions.
+This checks for `git`, `tmux`, the default LLM binaries (`claude`, `codex`), and `hapi`. Missing tools are surfaced with suggestions.
 
 ## 5. Create the first feature
 
@@ -60,6 +60,13 @@ sf session start payments core --llm claude
 
 The session name is `feat:payments:core:claude`. Session Forge runs `tmux new -d -s feat:... -c features/payments/core "claude --chat"` on the host, creating an interactive shell you can attach with `tmux attach -t feat:payments:core:claude` via SSH.
 
+If you want mobile control via HAPI, start it in the worktree instead:
+
+```bash
+sf hapi start payments core
+sf hapi start payments core --execute
+```
+
 ## 8. Send a prompt with context
 
 ```bash
@@ -81,6 +88,7 @@ sf feature destroy payments --yes
 
 - `sf doctor` summarizes local state.
 - `sf serve` exposes the same orchestration via FastAPI (`/sync`, `/sessions`, `/prompt`).
+- `sf worktree list payments` shows worktree paths when you want to open HAPI directly.
 - Customize LLM commands in `src/sf/core/llm.py` or add adapters.
 - Extend prompt templates in `src/sf/core/prompt.py`.
 

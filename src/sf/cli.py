@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import subprocess
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -33,11 +34,15 @@ host_app = typer.Typer(help="Manage known hosts")
 repo_app = typer.Typer(help="Manage repositories")
 feature_app = typer.Typer(help="Manage features")
 session_app = typer.Typer(help="Manage LLM sessions")
+worktree_app = typer.Typer(help="Inspect worktree locations")
+hapi_app = typer.Typer(help="HAPI helpers")
 
 app.add_typer(host_app, name="host")
 app.add_typer(repo_app, name="repo")
 app.add_typer(feature_app, name="feature")
 app.add_typer(session_app, name="session")
+app.add_typer(worktree_app, name="worktree")
+app.add_typer(hapi_app, name="hapi")
 
 state_store = StateStore()
 
@@ -80,6 +85,22 @@ def ensure_host(available: Dict[str, HostConfig], name: str) -> HostConfig:
         return available[name]
     except KeyError:
         abort(f"Host '{name}' is not defined. Run 'sf host add {name}'.")
+
+
+def resolve_worktree_path(
+    feature_cfg: FeatureConfig,
+    repo_cfg: RepoConfig,
+    attachment: FeatureRepoAttachment,
+    *,
+    extra_subdir: Optional[str] = None,
+) -> str:
+    base_path = f"features/{feature_cfg.name}/{repo_cfg.name}"
+    worktree_path = repo_cfg.session_root(base_path)
+    if attachment.subdir:
+        worktree_path = f"{worktree_path}/{attachment.subdir}"
+    if extra_subdir:
+        worktree_path = f"{worktree_path}/{extra_subdir}"
+    return worktree_path
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +511,57 @@ def session_prompt(
     )
 
 
+@worktree_app.command("list")
+def worktree_list(feature: str = typer.Argument(..., help="Feature name")) -> None:
+    config = state_store.load_config()
+    feature_cfg = ensure_feature_exists(feature)
+    table = Table(title=f"Worktrees for {feature}")
+    table.add_column("Repo")
+    table.add_column("Host")
+    table.add_column("Path")
+    for attachment in feature_cfg.repos:
+        repo_cfg = ensure_repo(config.repos.get(attachment.repo), attachment.repo)
+        worktree_path = resolve_worktree_path(feature_cfg, repo_cfg, attachment)
+        for host_name in attachment.hosts:
+            table.add_row(repo_cfg.name, host_name, worktree_path)
+    console.print(table)
+
+
+@hapi_app.command("start")
+def hapi_start(
+    feature: str = typer.Argument(..., help="Feature name"),
+    repo: str = typer.Argument(..., help="Repo name"),
+    host: Optional[str] = typer.Option(None, "--host", help="Override host"),
+    subdir: Optional[str] = typer.Option(None, "--subdir", help="Append extra subdir"),
+    execute: bool = typer.Option(False, "--execute", help="Run the SSH command directly"),
+) -> None:
+    config = state_store.load_config()
+    feature_cfg = ensure_feature_exists(feature)
+    attachment = feature_cfg.get_attachment(repo)
+    if not attachment:
+        abort(f"Repo '{repo}' is not attached to feature '{feature}'")
+    if host:
+        host_name = host
+        if host_name not in attachment.hosts:
+            abort(f"Host '{host_name}' is not attached to repo '{repo}'")
+    else:
+        host_name = attachment.hosts[0]
+    host_cfg = ensure_host(config.hosts, host_name)
+    repo_cfg = ensure_repo(config.repos.get(repo), repo)
+    worktree_path = resolve_worktree_path(feature_cfg, repo_cfg, attachment, extra_subdir=subdir)
+    remote_command = f"cd {shlex.quote(worktree_path)} && hapi"
+    if host_cfg.target in {"local", "localhost"}:
+        command_parts = ["sh", "-lc", remote_command]
+    else:
+        command_parts = ["ssh", host_cfg.target, "--", "sh", "-lc", remote_command]
+    if execute:
+        result = subprocess.run(command_parts, check=False)
+        if result.returncode != 0:
+            abort("Failed to start HAPI session")
+        return
+    console.print(shlex.join(command_parts))
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
@@ -499,6 +571,7 @@ def session_prompt(
 def bootstrap(
     hosts: str = typer.Option(..., "--hosts", help="Comma-separated host names"),
     llms: List[str] = typer.Option(["claude", "codex"], "--llm", help="LLM binaries to check"),
+    check_hapi: bool = typer.Option(True, "--hapi/--no-hapi", help="Check HAPI binary"),
 ) -> None:
     config = state_store.load_config()
     host_names = [name.strip() for name in hosts.split(",") if name.strip()]
@@ -515,6 +588,8 @@ def bootstrap(
         for llm in llms:
             command = resolve_command(llm).split()[0]
             checks[f"{llm} cli"] = f"command -v {shlex.quote(command)}"
+        if check_hapi:
+            checks["hapi cli"] = "command -v hapi"
         for label, command in checks.items():
             result = ssh.run(command, check=False)
             if result.exit_code == 0:
@@ -552,6 +627,7 @@ def quickstart() -> None:
         "sf attach demo core --hosts a100-01",
         "sf sync demo",
         "sf session start demo core --llm claude",
+        "sf hapi start demo core",
         'sf prompt demo core --include "README.md"',
     ]
     console.print("[bold]Five-minute quickstart[/bold]")

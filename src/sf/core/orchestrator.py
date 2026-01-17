@@ -134,7 +134,7 @@ def start_session(
     _guard(lambda: git.ensure_anchor(repo_cfg))
     _guard(lambda: git.refresh_branch(repo_cfg, feature_cfg))
     worktree_path = _guard(lambda: git.ensure_worktree(repo_cfg, feature_cfg))
-    worktree_for_session = worktree_path
+    worktree_for_session = repo_cfg.session_root(worktree_path)
     if attachment.subdir:
         worktree_for_session = f"{worktree_for_session}/{attachment.subdir}"
     if subdir:
@@ -195,6 +195,7 @@ def send_prompt(
     _guard(lambda: git.ensure_anchor(repo_cfg))
     _guard(lambda: git.refresh_branch(repo_cfg, feature_cfg))
     worktree_path = _guard(lambda: git.ensure_worktree(repo_cfg, feature_cfg))
+    worktree_path = repo_cfg.session_root(worktree_path)
     if attachment.subdir:
         worktree_path = f"{worktree_path}/{attachment.subdir}"
     plan = PromptPlan(

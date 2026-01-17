@@ -36,6 +36,11 @@ class RepoConfig(BaseModel):
         description="Optional subdirectory inside repo for sessions (e.g., monorepo subset)",
     )
 
+    def session_root(self, worktree_path: str) -> str:
+        if self.anchor_subdir:
+            return f"{worktree_path}/{self.anchor_subdir}"
+        return worktree_path
+
 
 class FeatureRepoAttachment(BaseModel):
     """Attachment of a repo to a feature across one or more hosts."""
