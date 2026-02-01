@@ -72,24 +72,26 @@ uv sync --extra dev
 # 1. install
 uv tool install session-forge
 
-# 2. initialize local state and register a host + repo
+# 2. initialize local state (creates a local host)
 sf init
-sf host add a100-01 ubuntu@a100-01
+
+# 3. register a repo (and optional remote host)
 sf repo add core git@github.com:org/core.git --base main
+# sf host add a100-01 ubuntu@a100-01
 
-# 3. verify host capabilities
-sf bootstrap --hosts a100-01
+# 4. verify host capabilities
+sf bootstrap --hosts local
 
-# 4. create a feature, attach repos, sync
+# 5. create a feature, attach repos, sync
 sf feature new demo --base main
-sf attach demo core --hosts a100-01
+sf attach demo core
 sf sync demo
 
-# 5. launch HAPI for mobile control
+# 6. launch HAPI for mobile control
 sf hapi start demo core  # prints SSH command
 sf hapi start demo core --execute
 
-# 6. verify worktree paths when needed
+# 7. verify worktree paths when needed
 sf worktree list demo
 ```
 
@@ -101,12 +103,12 @@ sf worktree list demo
 | `sf host add <name> <user@host>` | Register an SSH target |
 | `sf repo add <name> <git-url>` | Register a git repo and base branch |
 | `sf feature new <feature>` | Create a feature definition |
-| `sf attach <feature> <repo> --hosts ...` | Attach a repo to a feature on specific hosts |
+| `sf attach <feature> <repo> --hosts ...` | Attach a repo to a feature on specific hosts (defaults to local) |
 | `sf sync <feature>` | Ensure anchor clone, feature branch, and worktrees exist on each host |
 | `sf worktree list <feature>` | Show worktree paths per host |
 | `sf hapi start <feature> <repo>` | Print SSH command to start HAPI in repo worktree |
 | `sf feature destroy <feature> --yes` | Remove worktrees and delete the feature |
-| `sf bootstrap --hosts ...` | Check git (and optional HAPI) on hosts |
+| `sf bootstrap --hosts ...` | Check git (and optional HAPI) on hosts (defaults to local) |
 | `sf doctor` | Display local state summary |
 
 ## Development

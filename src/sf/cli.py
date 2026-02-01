@@ -18,7 +18,13 @@ from sf.core.orchestrator import destroy_feature as orchestrator_destroy_feature
 from sf.core.orchestrator import sync_feature as orchestrator_sync_feature
 from sf.core.ssh import SshExecutor
 from sf.core.state import StateStore, ensure_state_dirs
-from sf.models import FeatureConfig, FeatureRepoAttachment, HostConfig, RepoConfig
+from sf.models import (
+    FeatureConfig,
+    FeatureRepoAttachment,
+    HostConfig,
+    RepoConfig,
+    SfConfig,
+)
 
 console = Console()
 app = typer.Typer(help="Session Forge CLI (sf): manage remote worktrees and project setup.")
@@ -35,6 +41,8 @@ app.add_typer(worktree_app, name="worktree")
 app.add_typer(hapi_app, name="hapi")
 
 state_store = StateStore()
+DEFAULT_HOST = "local"
+DEFAULT_HOST_TARGET = "localhost"
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +85,15 @@ def ensure_host(available: Dict[str, HostConfig], name: str) -> HostConfig:
         abort(f"Host '{name}' is not defined. Run 'sf host add {name}'.")
 
 
+def ensure_default_host(config: SfConfig) -> HostConfig:
+    host = config.hosts.get(DEFAULT_HOST)
+    if host is None:
+        host = HostConfig(name=DEFAULT_HOST, target=DEFAULT_HOST_TARGET)
+        config.ensure_host(host)
+        state_store.save_config(config)
+    return host
+
+
 def resolve_worktree_path(
     feature_cfg: FeatureConfig,
     repo_cfg: RepoConfig,
@@ -113,7 +130,9 @@ def init(force: bool = typer.Option(False, "--force", help="Overwrite existing c
     config_path = state_store.config_path
     if config_path.exists() and not force:
         abort("Config already exists. Pass --force to overwrite.")
-    config_path.write_text("hosts: {}\nrepos: {}\n")
+    config = SfConfig()
+    config.ensure_host(HostConfig(name=DEFAULT_HOST, target=DEFAULT_HOST_TARGET))
+    state_store.save_config(config)
     features_dir = state_store.feature_path("dummy").parent
     features_dir.mkdir(parents=True, exist_ok=True)
     console.print(f"Initialized Session Forge state at {config_path.parent}")
@@ -297,7 +316,9 @@ def feature_list() -> None:
 def feature_attach(
     feature: str = typer.Argument(..., help="Feature name"),
     repo: str = typer.Argument(..., help="Repo name"),
-    hosts: str = typer.Option(..., "--hosts", help="Comma-separated host names"),
+    hosts: str = typer.Option(
+        DEFAULT_HOST, "--hosts", help="Comma-separated host names", show_default=True
+    ),
     subdir: str | None = typer.Option(None, "--subdir", help="Override working subdir"),
 ) -> None:
     config = state_store.load_config()
@@ -307,7 +328,10 @@ def feature_attach(
     if not host_names:
         abort("--hosts must include at least one host name")
     for host_name in host_names:
-        ensure_host(config.hosts, host_name)
+        if host_name == DEFAULT_HOST:
+            ensure_default_host(config)
+        else:
+            ensure_host(config.hosts, host_name)
     existing = feature_cfg.get_attachment(repo)
     attachment = FeatureRepoAttachment(repo=repo_cfg.name, hosts=host_names, subdir=subdir)
     if existing:
@@ -416,7 +440,9 @@ def hapi_start(
 
 @app.command()
 def bootstrap(
-    hosts: str = typer.Option(..., "--hosts", help="Comma-separated host names"),
+    hosts: str = typer.Option(
+        DEFAULT_HOST, "--hosts", help="Comma-separated host names", show_default=True
+    ),
     check_hapi: bool = typer.Option(True, "--hapi/--no-hapi", help="Check HAPI binary"),
 ) -> None:
     config = state_store.load_config()
@@ -424,7 +450,10 @@ def bootstrap(
     if not host_names:
         abort("--hosts must include at least one host")
     for name in host_names:
-        host_cfg = ensure_host(config.hosts, name)
+        if name == DEFAULT_HOST:
+            host_cfg = ensure_default_host(config)
+        else:
+            host_cfg = ensure_host(config.hosts, name)
         console.print(f"[cyan]Bootstrapping host {name} ({host_cfg.target})[/cyan]")
         ssh = SshExecutor(host_cfg)
         checks = {
@@ -462,11 +491,10 @@ def quickstart() -> None:
     steps = [
         "uv tool install session-forge",
         "sf init",
-        "sf host add a100-01 ubuntu@a100-01",
         "sf repo add core git@github.com:org/core.git --base main",
-        "sf bootstrap --hosts a100-01",
+        "sf bootstrap --hosts local",
         "sf feature new demo --base main",
-        "sf attach demo core --hosts a100-01",
+        "sf attach demo core",
         "sf sync demo",
         "sf hapi start demo core",
         "sf worktree list demo",

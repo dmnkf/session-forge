@@ -18,19 +18,19 @@ sf init
 
 State files live under `~/.sf/` by default (config, features, logs). Override with the `SF_STATE_DIR` environment variable.
 
-## 3. Register hosts and repos
+## 3. Register repos (and optional remote hosts)
 
 ```bash
-sf host add gpu-01 ubuntu@gpu-01
 sf repo add core git@github.com:org/core.git --base main
+# sf host add gpu-01 ubuntu@gpu-01
 ```
 
-Use `--tag` and `--env KEY=VALUE` when you need metadata or extra environment variables for commands on the host.
+`sf init` creates a default `local` host targeting `localhost`. Use `sf host add` when you need remote hosts.
 
 ## 4. Bootstrap host capabilities
 
 ```bash
-sf bootstrap --hosts gpu-01
+sf bootstrap --hosts local
 ```
 
 This checks for `git` (and optionally `hapi`). Missing tools are surfaced with suggestions.
@@ -39,10 +39,10 @@ This checks for `git` (and optionally `hapi`). Missing tools are surfaced with s
 
 ```bash
 sf feature new payments --base main
-sf attach payments core --hosts gpu-01
+sf attach payments core
 ```
 
-Attachments map repos to the hosts that should host their worktrees for the feature branch.
+Attachments map repos to the hosts that should host their worktrees for the feature branch. Use `--hosts gpu-01` to target a remote host.
 
 ## 6. Sync anchors and worktrees
 
