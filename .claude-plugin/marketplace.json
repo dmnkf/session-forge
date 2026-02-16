@@ -8,7 +8,7 @@
       "name": "session-forge",
       "source": "./",
       "description": "Skills for working with the Session Forge (sf) CLI",
-      "version": "0.1.0"
+      "version": "0.1.2"
     }
   ]
 }
