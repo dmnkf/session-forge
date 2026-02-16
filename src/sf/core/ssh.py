@@ -71,7 +71,7 @@ class SshExecutor:
         ssh_opts = ["-o", "BatchMode=yes"]
         if os.environ.get("SF_ACCEPT_NEW_HOSTKEYS") == "1":
             ssh_opts += ["-o", "StrictHostKeyChecking=accept-new"]
-        return ["ssh", *ssh_opts, target, "sh", "-lc", command]
+        return ["ssh", *ssh_opts, target, "sh", "-lc", shlex.quote(command)]
 
     def run(
         self,
