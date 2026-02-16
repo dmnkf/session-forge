@@ -102,6 +102,95 @@ def ensure_default_host(config: SfConfig) -> HostConfig:
     return host
 
 
+def discover_host_state(host_name: str, *, dry_run: bool = False) -> Dict[str, int]:
+    config = state_store.load_config()
+    if host_name == DEFAULT_HOST:
+        host_cfg = ensure_default_host(config)
+    else:
+        host_cfg = ensure_host(config.hosts, host_name)
+
+    ssh = SshExecutor(host_cfg, dry_run=dry_run)
+    scan_command = (
+        "if [ -d repo-cache ]; then "
+        "for p in repo-cache/*.anchor; do "
+        '[ -d "$p/.git" ] || continue; '
+        'repo=$(basename "$p" .anchor); '
+        'url=$(git -C "$p" remote get-url origin 2>/dev/null || true); '
+        'printf \'REPO\\t%s\\t%s\\n\' "$repo" "$url"; '
+        "done; "
+        "fi; "
+        "if [ -d features ]; then "
+        "for d in features/*/*; do "
+        '[ -d "$d/.git" ] || continue; '
+        "feature=$(printf '%s' \"$d\" | cut -d/ -f2); "
+        "repo=$(printf '%s' \"$d\" | cut -d/ -f3); "
+        'printf \'WT\\t%s\\t%s\\n\' "$feature" "$repo"; '
+        "done; "
+        "fi"
+    )
+    result = ssh.run(scan_command, check=False)
+    if result.exit_code != 0:
+        abort(result.stderr.strip() or result.stdout.strip() or "Failed to scan host")
+
+    discovered_repos: Dict[str, str] = {}
+    discovered_worktrees: List[tuple[str, str]] = []
+    for line in result.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        kind = parts[0]
+        if kind == "REPO":
+            discovered_repos[parts[1]] = parts[2]
+        elif kind == "WT":
+            discovered_worktrees.append((parts[1], parts[2]))
+
+    config_changed = False
+    feature_changes = 0
+    for repo_name, remote_url in discovered_repos.items():
+        existing = config.repos.get(repo_name)
+        if existing is None:
+            repo_cfg = RepoConfig(
+                name=repo_name,
+                url=remote_url or f"unknown://{repo_name}",
+                base="main",
+            )
+            config.ensure_repo(repo_cfg)
+            config_changed = True
+        elif remote_url and existing.url.startswith("unknown://"):
+            config.ensure_repo(existing.model_copy(update={"url": remote_url}))
+            config_changed = True
+
+    for feature_name, repo_name in discovered_worktrees:
+        if repo_name not in config.repos:
+            config.ensure_repo(
+                RepoConfig(name=repo_name, url=f"unknown://{repo_name}", base="main")
+            )
+            config_changed = True
+        feature_cfg = state_store.load_feature(feature_name, required=False)
+        if feature_cfg is None:
+            feature_cfg = FeatureConfig(name=feature_name, base="main", repos=[])
+        attachment = feature_cfg.get_attachment(repo_name)
+        changed = False
+        if attachment is None:
+            feature_cfg.repos.append(FeatureRepoAttachment(repo=repo_name, hosts=[host_name]))
+            changed = True
+        elif host_name not in attachment.hosts:
+            attachment.hosts.append(host_name)
+            changed = True
+        if changed:
+            state_store.save_feature(feature_cfg)
+            feature_changes += 1
+
+    if config_changed:
+        state_store.save_config(config)
+
+    return {
+        "repos": len(discovered_repos),
+        "worktrees": len(discovered_worktrees),
+        "feature_updates": feature_changes,
+    }
+
+
 def resolve_worktree_path(
     feature_cfg: FeatureConfig,
     repo_cfg: RepoConfig,
@@ -237,12 +326,23 @@ def host_add(
     env: List[str] = typer.Option(
         None, "--env", help="Environment variable KEY=VALUE", show_default=False
     ),
+    discover: bool = typer.Option(
+        True,
+        "--discover/--no-discover",
+        help="Scan host for existing repo-cache/features and merge into state",
+    ),
 ) -> None:
     config = state_store.load_config()
     host = HostConfig(name=name, target=target, tags=tag or [], env=parse_key_value(env or []))
     config.ensure_host(host)
     state_store.save_config(config)
     console.print(f"Saved host [bold]{name}[/bold] -> {target}")
+    if discover:
+        summary = discover_host_state(name)
+        console.print(
+            f"Discovered {summary['repos']} repos, {summary['worktrees']} worktrees, "
+            f"{summary['feature_updates']} feature updates"
+        )
 
 
 @host_app.command("list")
@@ -256,6 +356,18 @@ def host_list() -> None:
     for host in config.hosts.values():
         table.add_row(host.name, host.target, ",".join(host.tags), json.dumps(host.env))
     console.print(table)
+
+
+@host_app.command("discover")
+def host_discover(
+    name: str = typer.Argument(DEFAULT_HOST, help="Host name to scan"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview commands without persisting"),
+) -> None:
+    summary = discover_host_state(name, dry_run=dry_run)
+    console.print(
+        f"Discovered {summary['repos']} repos, {summary['worktrees']} worktrees, "
+        f"{summary['feature_updates']} feature updates"
+    )
 
 
 # ---------------------------------------------------------------------------

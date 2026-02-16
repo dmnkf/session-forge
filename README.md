@@ -86,6 +86,7 @@ sf worktree list demo
 | --- | --- |
 | `sf init` | Initialize `~/.sf` state directory and config |
 | `sf host add <name> <user@host>` | Register an SSH target |
+| `sf host discover [host]` | Scan a host and merge known repos/features into state |
 | `sf repo add <name> <git-url>` | Register a git repo and base branch |
 | `sf feature new <feature>` | Create a feature definition |
 | `sf attach <feature> <repo> --hosts ...` | Attach a repo to a feature on specific hosts (defaults to local) |
@@ -141,6 +142,8 @@ sf state import sf-state.json
 ```
 
 Use `sf state import sf-state.json --replace` to replace existing local state before importing.
+
+When you add a host, Session Forge automatically scans existing `repo-cache` and `features` directories on that host and merges discovered repos/features into local state. You can re-run this any time with `sf host discover <host>`.
 
 ## License
 

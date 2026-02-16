@@ -60,5 +60,6 @@ Each feature can run isolated Docker Compose stacks. Containers, networks, and v
 
 ## Diagnostics
 - `sf bootstrap --hosts ... [--no-hapi]`
+- `sf host discover [host]`
 - `sf doctor`
 - `sf quickstart`
