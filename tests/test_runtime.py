@@ -134,7 +134,9 @@ def test_runtime_ps_dry_run(runtime_setup):
 
 def test_runtime_build_command_with_file(runtime_setup):
     runtime, _, _, _ = runtime_setup
-    attachment = FeatureRepoAttachment(repo="r", hosts=["h"], service=ServiceConfig(file="custom.yml"))
+    attachment = FeatureRepoAttachment(
+        repo="r", hosts=["h"], service=ServiceConfig(file="custom.yml")
+    )
     cmd = runtime._build_command("up", attachment)
     assert "-f" in cmd
     assert "custom.yml" in cmd
@@ -172,9 +174,7 @@ def test_script_command_builder_missing_action_raises():
 
 def test_unknown_runtime_raises(runtime_setup):
     runtime, _, _, _ = runtime_setup
-    attachment = FeatureRepoAttachment(
-        repo="r", hosts=["h"], service=ServiceConfig(runtime="nope")
-    )
+    attachment = FeatureRepoAttachment(repo="r", hosts=["h"], service=ServiceConfig(runtime="nope"))
     with pytest.raises(ValueError, match="Unknown service runtime 'nope'"):
         runtime._build_command("up", attachment)
 
