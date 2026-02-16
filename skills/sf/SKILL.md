@@ -1,6 +1,6 @@
 ---
 name: session-forge
-description: Worktree orchestration and project setup with the Session Forge (sf) CLI. Use when registering hosts and repos, creating multi-repo features, syncing worktrees across hosts, listing worktree paths, or handing off to HAPI for mobile sessions.
+description: Worktree orchestration and project setup with the Session Forge (sf) CLI. Use when registering hosts and repos, creating multi-repo features, syncing worktrees across hosts, managing Docker Compose stacks per feature, listing worktree paths, or handing off to HAPI for mobile sessions.
 ---
 
 # Session Forge (sf)
@@ -33,6 +33,20 @@ description: Worktree orchestration and project setup with the Session Forge (sf
 - Print the SSH command: `sf hapi start <feature> <repo>`
 - Execute it immediately: `sf hapi start <feature> <repo> --execute`
 - Cross-repo session at feature root: `ssh <host> "cd ~/features/<feature> && hapi"`
+
+## Docker Compose per feature
+Each feature can run isolated Docker Compose stacks. Containers, networks, and volumes are namespaced per feature via `COMPOSE_PROJECT_NAME`. A deterministic `SF_PORT_OFFSET` env var is provided for port isolation.
+
+- Start stacks: `sf compose up <feature> [--repo <repo>] [--host <host>] [--dry-run]`
+- Stop stacks: `sf compose down <feature> [--repo <repo>] [--host <host>] [--volumes/-v]`
+- Show status: `sf compose ps <feature> [--repo <repo>] [--host <host>]`
+- `sf feature destroy` automatically tears down compose stacks before removing worktrees.
+- Custom compose file: use `--compose-file` on `sf attach` to override the default path.
+- Use `SF_PORT_OFFSET` in your `docker-compose.yml` for port mapping:
+  ```yaml
+  ports:
+    - "${SF_PORT_OFFSET:-0}:3000"
+  ```
 
 ## One-shot setup
 - `sf up --host name=user@host --repo name=url --feature name` to create config and sync in one step.
