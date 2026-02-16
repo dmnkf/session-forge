@@ -1,0 +1,14 @@
+{
+  "name": "session-forge",
+  "owner": {
+    "name": "dmnk"
+  },
+  "plugins": [
+    {
+      "name": "session-forge",
+      "source": "./",
+      "description": "Skills for working with the Session Forge (sf) CLI",
+      "version": "0.1.0"
+    }
+  ]
+}

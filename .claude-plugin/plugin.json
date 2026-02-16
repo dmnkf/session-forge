@@ -1,0 +1,11 @@
+{
+  "name": "session-forge",
+  "version": "0.1.0",
+  "description": "Skills for working with the Session Forge (sf) CLI — remote worktree orchestration over SSH",
+  "author": {
+    "name": "dmnk"
+  },
+  "repository": "https://github.com/dmnk/session-forge",
+  "license": "MIT",
+  "skills": "./skills/"
+}
