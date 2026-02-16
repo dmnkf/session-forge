@@ -6,7 +6,12 @@ import shlex
 from dataclasses import dataclass
 
 from sf.core.ssh import CommandResult, SshExecutor
-from sf.models import FeatureConfig, FeatureRepoAttachment, RepoConfig, compute_port_offset
+from sf.models import (
+    FeatureConfig,
+    FeatureRepoAttachment,
+    RepoConfig,
+    compute_port_offset,
+)
 
 
 @dataclass

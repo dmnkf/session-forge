@@ -14,7 +14,6 @@ from sf.models import (
     compute_port_offset,
 )
 
-
 # --- Port offset tests ---
 
 
