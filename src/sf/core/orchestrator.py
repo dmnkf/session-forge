@@ -5,8 +5,8 @@ from __future__ import annotations
 import subprocess
 from typing import Dict, List, Optional
 
-from sf.core.compose import ComposeManager
 from sf.core.git import GitManager
+from sf.core.runtime import ServiceRuntime
 from sf.core.ssh import SshExecutor
 from sf.core.state import StateStore
 from sf.models import FeatureConfig, FeatureRepoAttachment, HostConfig, RepoConfig
@@ -29,6 +29,8 @@ def _guard(fn):
     except subprocess.CalledProcessError as exc:
         message = (exc.stderr or exc.output or str(exc)).strip()
         raise OrchestratorError(message or "Remote command failed") from exc
+    except ValueError as exc:
+        raise OrchestratorError(str(exc)) from exc
 
 
 def _ensure_feature(feature: str) -> FeatureConfig:
@@ -110,10 +112,10 @@ def destroy_feature(feature: str) -> List[Dict[str, str]]:
         for host_name in attachment.hosts:
             host_cfg = _ensure_host(host_name, config.hosts)
             ssh = SshExecutor(host_cfg)
-            compose = ComposeManager(ssh)
+            runtime = ServiceRuntime(ssh)
             wt = _worktree_path(feature_cfg, repo_cfg)
             try:
-                _guard(lambda: compose.down(repo_cfg, feature_cfg, attachment, wt, volumes=True))
+                _guard(lambda: runtime.down(repo_cfg, feature_cfg, attachment, wt, volumes=True))
             except OrchestratorError:
                 pass
             git = GitManager(ssh)
@@ -124,14 +126,16 @@ def destroy_feature(feature: str) -> List[Dict[str, str]]:
     return results
 
 
-def compose_up(
+def _run_service_action(
     feature: str,
+    action: str,
     *,
     repo: Optional[str] = None,
     host: Optional[str] = None,
     dry_run: bool = False,
+    action_kwargs: Optional[Dict] = None,
 ) -> List[Dict[str, str]]:
-    """Start compose stacks for a feature."""
+    """Run a service runtime action across matching attachments and hosts."""
     config = store.load_config()
     feature_cfg = _ensure_feature(feature)
     attachments = feature_cfg.repos
@@ -139,75 +143,62 @@ def compose_up(
         attachments = [att for att in attachments if att.repo == repo]
     if not attachments:
         raise OrchestratorError("No repo attachments found")
-    summary: List[Dict[str, str]] = []
+    kwargs = action_kwargs or {}
+    results: List[Dict[str, str]] = []
     for attachment in attachments:
         repo_cfg = _ensure_repo(attachment.repo, config.repos)
         hosts = [host] if host else attachment.hosts
         for host_name in hosts:
             host_cfg = _ensure_host(host_name, config.hosts)
             ssh = SshExecutor(host_cfg, dry_run=dry_run)
-            compose = ComposeManager(ssh)
+            runtime = ServiceRuntime(ssh)
             wt = _worktree_path(feature_cfg, repo_cfg)
-            _guard(lambda: compose.up(repo_cfg, feature_cfg, attachment, wt))
-            summary.append({"host": host_name, "repo": repo_cfg.name, "worktree": wt})
-    return summary
+            method = getattr(runtime, action)
+            result = _guard(lambda: method(repo_cfg, feature_cfg, attachment, wt, **kwargs))
+            entry = {"host": host_name, "repo": repo_cfg.name, "worktree": wt}
+            if action == "ps":
+                entry["output"] = result.stdout
+                if result.exit_code != 0:
+                    entry["error"] = (
+                        result.stderr.strip()
+                        or result.stdout.strip()
+                        or f"Service ps failed (exit code {result.exit_code})"
+                    )
+            results.append(entry)
+    return results
 
 
-def compose_down(
+def service_up(
+    feature: str, *, repo: Optional[str] = None, host: Optional[str] = None, dry_run: bool = False
+) -> List[Dict[str, str]]:
+    """Start service stacks for a feature."""
+    return _run_service_action(feature, "up", repo=repo, host=host, dry_run=dry_run)
+
+
+def service_down(
     feature: str,
     *,
     repo: Optional[str] = None,
     host: Optional[str] = None,
     volumes: bool = False,
 ) -> List[Dict[str, str]]:
-    """Stop compose stacks for a feature."""
-    config = store.load_config()
-    feature_cfg = _ensure_feature(feature)
-    attachments = feature_cfg.repos
-    if repo:
-        attachments = [att for att in attachments if att.repo == repo]
-    if not attachments:
-        raise OrchestratorError("No repo attachments found")
-    results: List[Dict[str, str]] = []
-    for attachment in attachments:
-        repo_cfg = _ensure_repo(attachment.repo, config.repos)
-        hosts = [host] if host else attachment.hosts
-        for host_name in hosts:
-            host_cfg = _ensure_host(host_name, config.hosts)
-            ssh = SshExecutor(host_cfg)
-            compose = ComposeManager(ssh)
-            wt = _worktree_path(feature_cfg, repo_cfg)
-            _guard(lambda: compose.down(repo_cfg, feature_cfg, attachment, wt, volumes=volumes))
-            results.append({"host": host_name, "repo": repo_cfg.name})
-    return results
+    """Stop service stacks for a feature."""
+    return _run_service_action(
+        feature, "down", repo=repo, host=host, action_kwargs={"volumes": volumes}
+    )
 
 
-def compose_ps(
-    feature: str,
-    *,
-    repo: Optional[str] = None,
-    host: Optional[str] = None,
+def service_ps(
+    feature: str, *, repo: Optional[str] = None, host: Optional[str] = None
 ) -> List[Dict[str, str]]:
-    """Show compose status for a feature."""
-    config = store.load_config()
-    feature_cfg = _ensure_feature(feature)
-    attachments = feature_cfg.repos
-    if repo:
-        attachments = [att for att in attachments if att.repo == repo]
-    if not attachments:
-        raise OrchestratorError("No repo attachments found")
-    results: List[Dict[str, str]] = []
-    for attachment in attachments:
-        repo_cfg = _ensure_repo(attachment.repo, config.repos)
-        hosts = [host] if host else attachment.hosts
-        for host_name in hosts:
-            host_cfg = _ensure_host(host_name, config.hosts)
-            ssh = SshExecutor(host_cfg)
-            compose = ComposeManager(ssh)
-            wt = _worktree_path(feature_cfg, repo_cfg)
-            result = compose.ps(repo_cfg, feature_cfg, attachment, wt)
-            results.append({"host": host_name, "repo": repo_cfg.name, "output": result.stdout})
-    return results
+    """Show service status for a feature."""
+    return _run_service_action(feature, "ps", repo=repo, host=host)
+
+
+# Backward-compatible aliases
+compose_up = service_up
+compose_down = service_down
+compose_ps = service_ps
 
 
 __all__ = [
@@ -216,5 +207,8 @@ __all__ = [
     "compose_ps",
     "compose_up",
     "destroy_feature",
+    "service_down",
+    "service_ps",
+    "service_up",
     "sync_feature",
 ]

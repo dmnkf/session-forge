@@ -15,10 +15,10 @@ from rich.table import Table
 
 from sf import __version__
 from sf.core.orchestrator import OrchestratorError
-from sf.core.orchestrator import compose_down as orchestrator_compose_down
-from sf.core.orchestrator import compose_ps as orchestrator_compose_ps
-from sf.core.orchestrator import compose_up as orchestrator_compose_up
 from sf.core.orchestrator import destroy_feature as orchestrator_destroy_feature
+from sf.core.orchestrator import service_down as orchestrator_service_down
+from sf.core.orchestrator import service_ps as orchestrator_service_ps
+from sf.core.orchestrator import service_up as orchestrator_service_up
 from sf.core.orchestrator import sync_feature as orchestrator_sync_feature
 from sf.core.ssh import SshExecutor
 from sf.core.state import StateStore, ensure_state_dirs
@@ -38,7 +38,7 @@ feature_app = typer.Typer(help="Manage features")
 worktree_app = typer.Typer(help="Inspect worktree locations")
 hapi_app = typer.Typer(help="HAPI helpers")
 state_app = typer.Typer(help="Import/export state")
-compose_app = typer.Typer(help="Manage Docker Compose stacks per feature")
+compose_app = typer.Typer(help="Manage service stacks per feature")
 
 app.add_typer(host_app, name="host")
 app.add_typer(repo_app, name="repo")
@@ -590,14 +590,14 @@ def compose_up(
     host: str | None = typer.Option(None, "--host", help="Limit to specific host"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview commands without executing"),
 ) -> None:
-    """Start Docker Compose stacks for a feature."""
+    """Start service stacks for a feature."""
     try:
-        summary = orchestrator_compose_up(feature, repo=repo, host=host, dry_run=dry_run)
+        summary = orchestrator_service_up(feature, repo=repo, host=host, dry_run=dry_run)
     except OrchestratorError as exc:
         abort(str(exc))
     for item in summary:
         console.print(
-            f"[green]Started compose[/green] for [bold]{item['repo']}[/bold] "
+            f"[green]Started service[/green] for [bold]{item['repo']}[/bold] "
             f"on [bold]{item['host']}[/bold]"
         )
 
@@ -609,14 +609,14 @@ def compose_down(
     host: str | None = typer.Option(None, "--host", help="Limit to specific host"),
     volumes: bool = typer.Option(False, "--volumes", "-v", help="Remove volumes too"),
 ) -> None:
-    """Stop Docker Compose stacks for a feature."""
+    """Stop service stacks for a feature."""
     try:
-        summary = orchestrator_compose_down(feature, repo=repo, host=host, volumes=volumes)
+        summary = orchestrator_service_down(feature, repo=repo, host=host, volumes=volumes)
     except OrchestratorError as exc:
         abort(str(exc))
     for item in summary:
         console.print(
-            f"[yellow]Stopped compose[/yellow] for [bold]{item['repo']}[/bold] "
+            f"[yellow]Stopped service[/yellow] for [bold]{item['repo']}[/bold] "
             f"on [bold]{item['host']}[/bold]"
         )
 
@@ -627,14 +627,16 @@ def compose_ps(
     repo: str | None = typer.Option(None, "--repo", help="Limit to specific repo"),
     host: str | None = typer.Option(None, "--host", help="Limit to specific host"),
 ) -> None:
-    """Show Docker Compose status for a feature."""
+    """Show service status for a feature."""
     try:
-        results = orchestrator_compose_ps(feature, repo=repo, host=host)
+        results = orchestrator_service_ps(feature, repo=repo, host=host)
     except OrchestratorError as exc:
         abort(str(exc))
     for item in results:
         console.print(f"[cyan]{item['repo']}@{item['host']}[/cyan]")
-        if item.get("output", "").strip():
+        if item.get("error"):
+            console.print(f"  [red]{item['error']}[/red]")
+        elif item.get("output", "").strip():
             console.print(item["output"])
         else:
             console.print("  No containers running")

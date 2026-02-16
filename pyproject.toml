@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "session-forge"
-version = "0.1.3"
+version = "0.1.4"
 description = "Session Forge (sf): orchestrate remote worktrees and project setup for HAPI-managed sessions."
 readme = "README.md"
 license = {text = "Apache-2.0"}

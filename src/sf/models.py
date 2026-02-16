@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 DEFAULT_BASE_BRANCH = "main"
 STATE_ROOT = Path(os.environ.get("SF_STATE_DIR", str(Path.home() / ".sf")))
@@ -43,6 +43,29 @@ class RepoConfig(BaseModel):
         return worktree_path
 
 
+class ServiceConfig(BaseModel):
+    """Configuration for a service runtime attached to a feature repo."""
+
+    runtime: str = Field(
+        "docker_compose",
+        description="Runtime type: docker_compose, podman_compose, script",
+    )
+    file: str | None = Field(
+        default=None,
+        description="Config file path (compose file, Makefile, etc.)",
+    )
+    commands: Dict[str, str] | None = Field(
+        default=None,
+        description="Custom command map for script runtime: {up: ..., down: ..., ps: ...}",
+    )
+
+    @model_validator(mode="after")
+    def _script_requires_commands(self) -> ServiceConfig:
+        if self.runtime == "script" and not self.commands:
+            raise ValueError("'script' runtime requires a 'commands' mapping")
+        return self
+
+
 class FeatureRepoAttachment(BaseModel):
     """Attachment of a repo to a feature across one or more hosts."""
 
@@ -52,10 +75,24 @@ class FeatureRepoAttachment(BaseModel):
         default=None,
         description="Optional subdirectory override used when starting sessions",
     )
-    compose_file: str | None = Field(
+    service: ServiceConfig | None = Field(
         default=None,
-        description="Path to compose file relative to worktree root",
+        description="Service runtime configuration for this attachment",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_compose_file(cls, values: dict) -> dict:
+        if isinstance(values, dict) and "compose_file" in values:
+            compose_file = values.pop("compose_file")
+            if compose_file and values.get("service"):
+                raise ValueError(
+                    "Cannot specify both 'compose_file' and 'service'; "
+                    "migrate 'compose_file' into 'service.file'"
+                )
+            if compose_file:
+                values["service"] = {"runtime": "docker_compose", "file": compose_file}
+        return values
 
     @field_validator("hosts")
     @classmethod
@@ -115,6 +152,7 @@ __all__ = [
     "HostConfig",
     "LOG_DIR",
     "RepoConfig",
+    "ServiceConfig",
     "SfConfig",
     "STATE_ROOT",
     "compute_port_offset",
