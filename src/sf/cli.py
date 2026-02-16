@@ -14,6 +14,9 @@ from rich.table import Table
 
 from sf import __version__
 from sf.core.orchestrator import OrchestratorError
+from sf.core.orchestrator import compose_down as orchestrator_compose_down
+from sf.core.orchestrator import compose_ps as orchestrator_compose_ps
+from sf.core.orchestrator import compose_up as orchestrator_compose_up
 from sf.core.orchestrator import destroy_feature as orchestrator_destroy_feature
 from sf.core.orchestrator import sync_feature as orchestrator_sync_feature
 from sf.core.ssh import SshExecutor
@@ -33,12 +36,14 @@ repo_app = typer.Typer(help="Manage repositories")
 feature_app = typer.Typer(help="Manage features")
 worktree_app = typer.Typer(help="Inspect worktree locations")
 hapi_app = typer.Typer(help="HAPI helpers")
+compose_app = typer.Typer(help="Manage Docker Compose stacks per feature")
 
 app.add_typer(host_app, name="host")
 app.add_typer(repo_app, name="repo")
 app.add_typer(feature_app, name="feature")
 app.add_typer(worktree_app, name="worktree")
 app.add_typer(hapi_app, name="hapi")
+app.add_typer(compose_app, name="compose")
 
 state_store = StateStore()
 DEFAULT_HOST = "local"
@@ -431,6 +436,68 @@ def hapi_start(
             abort("Failed to start HAPI session")
         return
     console.print(shlex.join(command_parts))
+
+
+# ---------------------------------------------------------------------------
+# Compose commands
+# ---------------------------------------------------------------------------
+
+
+@compose_app.command("up")
+def compose_up(
+    feature: str = typer.Argument(..., help="Feature name"),
+    repo: str | None = typer.Option(None, "--repo", help="Limit to specific repo"),
+    host: str | None = typer.Option(None, "--host", help="Limit to specific host"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview commands without executing"),
+) -> None:
+    """Start Docker Compose stacks for a feature."""
+    try:
+        summary = orchestrator_compose_up(feature, repo=repo, host=host, dry_run=dry_run)
+    except OrchestratorError as exc:
+        abort(str(exc))
+    for item in summary:
+        console.print(
+            f"[green]Started compose[/green] for [bold]{item['repo']}[/bold] "
+            f"on [bold]{item['host']}[/bold]"
+        )
+
+
+@compose_app.command("down")
+def compose_down(
+    feature: str = typer.Argument(..., help="Feature name"),
+    repo: str | None = typer.Option(None, "--repo", help="Limit to specific repo"),
+    host: str | None = typer.Option(None, "--host", help="Limit to specific host"),
+    volumes: bool = typer.Option(False, "--volumes", "-v", help="Remove volumes too"),
+) -> None:
+    """Stop Docker Compose stacks for a feature."""
+    try:
+        summary = orchestrator_compose_down(feature, repo=repo, host=host, volumes=volumes)
+    except OrchestratorError as exc:
+        abort(str(exc))
+    for item in summary:
+        console.print(
+            f"[yellow]Stopped compose[/yellow] for [bold]{item['repo']}[/bold] "
+            f"on [bold]{item['host']}[/bold]"
+        )
+
+
+@compose_app.command("ps")
+def compose_ps(
+    feature: str = typer.Argument(..., help="Feature name"),
+    repo: str | None = typer.Option(None, "--repo", help="Limit to specific repo"),
+    host: str | None = typer.Option(None, "--host", help="Limit to specific host"),
+) -> None:
+    """Show Docker Compose status for a feature."""
+    try:
+        results = orchestrator_compose_ps(feature, repo=repo, host=host)
+    except OrchestratorError as exc:
+        abort(str(exc))
+    for item in results:
+        console.print(f"[cyan]{item['repo']}@{item['host']}[/cyan]")
+        if item.get("output", "").strip():
+            console.print(item["output"])
+        else:
+            console.print("  No containers running")
 
 
 # ---------------------------------------------------------------------------

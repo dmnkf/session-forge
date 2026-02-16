@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Dict, List
@@ -51,6 +52,10 @@ class FeatureRepoAttachment(BaseModel):
         default=None,
         description="Optional subdirectory override used when starting sessions",
     )
+    compose_file: str | None = Field(
+        default=None,
+        description="Path to compose file relative to worktree root",
+    )
 
     @field_validator("hosts")
     @classmethod
@@ -87,6 +92,19 @@ class SfConfig(BaseModel):
         self.repos[repo.name] = repo
 
 
+PORT_BLOCK_SIZE = 100
+PORT_BASE = 10000
+PORT_BUCKETS = 500
+
+
+def compute_port_offset(feature_name: str, repo_name: str | None = None) -> int:
+    """Deterministic port offset from feature (and optionally repo) name."""
+    key = feature_name if repo_name is None else f"{feature_name}/{repo_name}"
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    bucket = int(digest[:8], 16) % PORT_BUCKETS
+    return PORT_BASE + bucket * PORT_BLOCK_SIZE
+
+
 __all__ = [
     "CACHE_DIR",
     "CONFIG_FILE",
@@ -99,4 +117,5 @@ __all__ = [
     "RepoConfig",
     "SfConfig",
     "STATE_ROOT",
+    "compute_port_offset",
 ]

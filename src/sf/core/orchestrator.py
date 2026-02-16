@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from typing import Dict, List, Optional
 
+from sf.core.compose import ComposeManager
 from sf.core.git import GitManager
 from sf.core.ssh import SshExecutor
 from sf.core.state import StateStore
@@ -59,6 +60,10 @@ def _select_host(attachment: FeatureRepoAttachment, preferred: Optional[str]) ->
     raise OrchestratorError("Attachment has no hosts configured")
 
 
+def _worktree_path(feature: FeatureConfig, repo: RepoConfig) -> str:
+    return f"features/{feature.name}/{repo.name}"
+
+
 # ---------------------------------------------------------------------------
 # Public routines
 # ---------------------------------------------------------------------------
@@ -105,6 +110,12 @@ def destroy_feature(feature: str) -> List[Dict[str, str]]:
         for host_name in attachment.hosts:
             host_cfg = _ensure_host(host_name, config.hosts)
             ssh = SshExecutor(host_cfg)
+            compose = ComposeManager(ssh)
+            wt = _worktree_path(feature_cfg, repo_cfg)
+            try:
+                _guard(lambda: compose.down(repo_cfg, feature_cfg, attachment, wt, volumes=True))
+            except OrchestratorError:
+                pass
             git = GitManager(ssh)
             _guard(lambda: git.destroy_worktree(repo_cfg, feature_cfg))
             _guard(lambda: git.delete_branch(repo_cfg, feature_cfg))
@@ -113,8 +124,97 @@ def destroy_feature(feature: str) -> List[Dict[str, str]]:
     return results
 
 
+def compose_up(
+    feature: str,
+    *,
+    repo: Optional[str] = None,
+    host: Optional[str] = None,
+    dry_run: bool = False,
+) -> List[Dict[str, str]]:
+    """Start compose stacks for a feature."""
+    config = store.load_config()
+    feature_cfg = _ensure_feature(feature)
+    attachments = feature_cfg.repos
+    if repo:
+        attachments = [att for att in attachments if att.repo == repo]
+    if not attachments:
+        raise OrchestratorError("No repo attachments found")
+    summary: List[Dict[str, str]] = []
+    for attachment in attachments:
+        repo_cfg = _ensure_repo(attachment.repo, config.repos)
+        hosts = [host] if host else attachment.hosts
+        for host_name in hosts:
+            host_cfg = _ensure_host(host_name, config.hosts)
+            ssh = SshExecutor(host_cfg, dry_run=dry_run)
+            compose = ComposeManager(ssh)
+            wt = _worktree_path(feature_cfg, repo_cfg)
+            _guard(lambda: compose.up(repo_cfg, feature_cfg, attachment, wt))
+            summary.append({"host": host_name, "repo": repo_cfg.name, "worktree": wt})
+    return summary
+
+
+def compose_down(
+    feature: str,
+    *,
+    repo: Optional[str] = None,
+    host: Optional[str] = None,
+    volumes: bool = False,
+) -> List[Dict[str, str]]:
+    """Stop compose stacks for a feature."""
+    config = store.load_config()
+    feature_cfg = _ensure_feature(feature)
+    attachments = feature_cfg.repos
+    if repo:
+        attachments = [att for att in attachments if att.repo == repo]
+    if not attachments:
+        raise OrchestratorError("No repo attachments found")
+    results: List[Dict[str, str]] = []
+    for attachment in attachments:
+        repo_cfg = _ensure_repo(attachment.repo, config.repos)
+        hosts = [host] if host else attachment.hosts
+        for host_name in hosts:
+            host_cfg = _ensure_host(host_name, config.hosts)
+            ssh = SshExecutor(host_cfg)
+            compose = ComposeManager(ssh)
+            wt = _worktree_path(feature_cfg, repo_cfg)
+            _guard(lambda: compose.down(repo_cfg, feature_cfg, attachment, wt, volumes=volumes))
+            results.append({"host": host_name, "repo": repo_cfg.name})
+    return results
+
+
+def compose_ps(
+    feature: str,
+    *,
+    repo: Optional[str] = None,
+    host: Optional[str] = None,
+) -> List[Dict[str, str]]:
+    """Show compose status for a feature."""
+    config = store.load_config()
+    feature_cfg = _ensure_feature(feature)
+    attachments = feature_cfg.repos
+    if repo:
+        attachments = [att for att in attachments if att.repo == repo]
+    if not attachments:
+        raise OrchestratorError("No repo attachments found")
+    results: List[Dict[str, str]] = []
+    for attachment in attachments:
+        repo_cfg = _ensure_repo(attachment.repo, config.repos)
+        hosts = [host] if host else attachment.hosts
+        for host_name in hosts:
+            host_cfg = _ensure_host(host_name, config.hosts)
+            ssh = SshExecutor(host_cfg)
+            compose = ComposeManager(ssh)
+            wt = _worktree_path(feature_cfg, repo_cfg)
+            result = compose.ps(repo_cfg, feature_cfg, attachment, wt)
+            results.append({"host": host_name, "repo": repo_cfg.name, "output": result.stdout})
+    return results
+
+
 __all__ = [
     "OrchestratorError",
+    "compose_down",
+    "compose_ps",
+    "compose_up",
     "destroy_feature",
     "sync_feature",
 ]
