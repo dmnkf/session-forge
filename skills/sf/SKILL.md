@@ -55,6 +55,8 @@ Each feature can run isolated Docker Compose stacks. Containers, networks, and v
 - Config: `~/.sf/config.yml`
 - Features: `~/.sf/features/<feature>.yml`
 - Override root with `SF_STATE_DIR`
+- Export: `sf state export sf-state.json`
+- Import: `sf state import sf-state.json [--replace]`
 
 ## Diagnostics
 - `sf bootstrap --hosts ... [--no-hapi]`

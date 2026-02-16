@@ -92,6 +92,8 @@ sf worktree list demo
 | `sf sync <feature>` | Ensure anchor clone, feature branch, and worktrees exist on each host |
 | `sf worktree list <feature>` | Show worktree paths per host |
 | `sf hapi start <feature> <repo>` | Print SSH command to start HAPI in repo worktree |
+| `sf state export <file.json>` | Export config + features to a JSON bundle |
+| `sf state import <file.json>` | Import config + features from a JSON bundle |
 | `sf feature destroy <feature> --yes` | Remove worktrees and delete the feature |
 | `sf bootstrap --hosts ...` | Check git (and optional HAPI) on hosts (defaults to local) |
 | `sf doctor` | Display local state summary |
@@ -125,6 +127,20 @@ uv publish
 ## HAPI integration
 
 Session Forge focuses on project setup and worktree orchestration; HAPI provides the mobile session UI. After `sf sync`, start HAPI inside a repo worktree or the shared feature directory (use `sf worktree list` to locate paths).
+
+## Syncing state across machines
+
+Use one machine as your main control node, and export/import state when you need the same setup elsewhere.
+
+```bash
+# on machine A
+sf state export sf-state.json
+
+# copy sf-state.json to machine B, then:
+sf state import sf-state.json
+```
+
+Use `sf state import sf-state.json --replace` to replace existing local state before importing.
 
 ## License
 

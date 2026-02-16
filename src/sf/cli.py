@@ -6,6 +6,7 @@ import json
 import os
 import shlex
 import subprocess
+from pathlib import Path
 from typing import Dict, Iterable, List
 
 import typer
@@ -36,6 +37,7 @@ repo_app = typer.Typer(help="Manage repositories")
 feature_app = typer.Typer(help="Manage features")
 worktree_app = typer.Typer(help="Inspect worktree locations")
 hapi_app = typer.Typer(help="HAPI helpers")
+state_app = typer.Typer(help="Import/export state")
 compose_app = typer.Typer(help="Manage Docker Compose stacks per feature")
 
 app.add_typer(host_app, name="host")
@@ -43,6 +45,7 @@ app.add_typer(repo_app, name="repo")
 app.add_typer(feature_app, name="feature")
 app.add_typer(worktree_app, name="worktree")
 app.add_typer(hapi_app, name="hapi")
+app.add_typer(state_app, name="state")
 app.add_typer(compose_app, name="compose")
 
 state_store = StateStore()
@@ -128,7 +131,9 @@ def version() -> None:
 
 
 @app.command()
-def init(force: bool = typer.Option(False, "--force", help="Overwrite existing config")) -> None:
+def init(
+    force: bool = typer.Option(False, "--force", help="Overwrite existing config"),
+) -> None:
     """Initialize ~/.sf with default structure and empty config."""
 
     ensure_state_dirs()
@@ -153,7 +158,9 @@ def up(
         None, "--repo-base", help="Repository base branch", show_default=False
     ),
     accept_new_hostkeys: bool = typer.Option(
-        False, "--accept-new-hostkeys", help="Set SF_ACCEPT_NEW_HOSTKEYS=1 for remote calls"
+        False,
+        "--accept-new-hostkeys",
+        help="Set SF_ACCEPT_NEW_HOSTKEYS=1 for remote calls",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview remote operations"),
 ) -> None:
@@ -436,6 +443,27 @@ def hapi_start(
             abort("Failed to start HAPI session")
         return
     console.print(shlex.join(command_parts))
+
+
+@state_app.command("export")
+def state_export(
+    destination: Path = typer.Argument(..., help="Destination JSON file"),
+) -> None:
+    state_store.export_state(destination)
+
+
+@state_app.command("import")
+def state_import(
+    source: Path = typer.Argument(..., help="Source JSON file"),
+    replace: bool = typer.Option(
+        False,
+        "--replace",
+        help="Replace existing local state before importing",
+    ),
+) -> None:
+    if replace:
+        console.print("[yellow]Replacing existing state before import[/yellow]")
+    state_store.import_state(source, replace=replace)
 
 
 # ---------------------------------------------------------------------------

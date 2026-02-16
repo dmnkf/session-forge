@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -95,6 +96,35 @@ class StateStore:
         snapshot = self.dump_state()
         destination.write_text(json.dumps(snapshot, indent=2))
         console.print(f"Exported state to {destination}")
+
+    def import_state(self, source: Path, *, replace: bool = False) -> None:
+        payload = json.loads(source.read_text())
+        config_payload = payload.get("config", {})
+        features_payload = payload.get("features", {})
+
+        hosts = {
+            name: HostConfig(**data) for name, data in (config_payload.get("hosts") or {}).items()
+        }
+        repos = {
+            name: RepoConfig(**data) for name, data in (config_payload.get("repos") or {}).items()
+        }
+        imported_config = SfConfig(hosts=hosts, repos=repos)
+
+        if replace and self.root.exists():
+            shutil.rmtree(self.root)
+            ensure_state_dirs(self.root)
+
+        current_config = self.load_config()
+        for host in imported_config.hosts.values():
+            current_config.ensure_host(host)
+        for repo in imported_config.repos.values():
+            current_config.ensure_repo(repo)
+        self.save_config(current_config)
+
+        for feature_name, feature_data in features_payload.items():
+            feature_data["name"] = feature_data.get("name") or feature_name
+            self.save_feature(FeatureConfig(**feature_data))
+        console.print(f"Imported state from {source}")
 
 
 __all__ = ["StateStore", "ensure_state_dirs"]
